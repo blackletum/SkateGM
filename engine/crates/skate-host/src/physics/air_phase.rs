@@ -14,7 +14,9 @@ use skate_core::air::state::{
 
 ///Original initializer82F826B0/822F8B40. This COM trajectory acceleration is
 ///distinct from the world's separately supplied rigid-body gravity setting.
-const COM_ACCELERATION: [f32; 4] = [0.0, f32::from_bits(0xc11c_cccd), 0.0, 0.0];
+fn com_acceleration() -> [f32; 4] {
+    [0.0, f32::from_bits(0xc11c_cccd) * skate_core::cheats::gravity_scale(), 0.0, 0.0]
+}
 
 pub(super) fn enter(physics: &mut GamePhysics, skater: &mut SkaterRuntime) -> Result<(), String> {
     let frame = input::frame(skater);
@@ -64,7 +66,7 @@ pub(super) fn enter(physics: &mut GamePhysics, skater: &mut SkaterRuntime) -> Re
         state.centre_of_mass_trajectory = AirTrajectory {
             position: frame.trajectory_position_592,
             velocity,
-            acceleration: COM_ACCELERATION,
+            acceleration: com_acceleration(),
             scalar_48: -1.0,
         };
     }
@@ -105,7 +107,7 @@ pub(super) fn advance(physics: &mut GamePhysics, skater: &mut SkaterRuntime) -> 
             //narrows the cone. Caller clears player_jumped again before Launch.
             let velocity = skater.air_state.centre_of_mass_trajectory.velocity;
             info.start_velocity = std::array::from_fn(|i| {
-                COM_ACCELERATION[i].mul_add(f32::from_bits(0x3c88_8889), velocity[i])
+                com_acceleration()[i].mul_add(f32::from_bits(0x3c88_8889), velocity[i])
             });
             info.start_position_override = info.animation_com_position;
             info.start_position_override[1] += f32::from_bits(0xbf26_6666);
@@ -162,7 +164,7 @@ pub(super) fn advance(physics: &mut GamePhysics, skater: &mut SkaterRuntime) -> 
             state.centre_of_mass_trajectory = AirTrajectory {
                 position: frame.trajectory_position_592,
                 velocity: frame.trajectory_velocity_608,
-                acceleration: COM_ACCELERATION,
+                acceleration: com_acceleration(),
                 scalar_48: -1.0,
             };
         }

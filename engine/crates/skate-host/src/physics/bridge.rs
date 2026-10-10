@@ -11,6 +11,8 @@ pub struct Controls {
     pub left: [i16; 2],
     pub right: [i16; 2],
 }
+pub static LOAD_STEP: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
 pub struct Session {
     physics: GamePhysics,
     skater: SkaterRuntime,
@@ -21,6 +23,7 @@ pub struct Session {
     markers: crate::session_marker::Runtime,
     forced_wipeout: u32,
     loose_board_friction: f32,
+    base_gravity: skate_core::math::Vector3,
 }
 pub struct Pose {
     pub root: Mat4,
@@ -48,12 +51,14 @@ impl Session {
         heading: f32,
     ) -> Result<Self, String> {
         let started = std::time::Instant::now();
+        LOAD_STEP.store(1, std::sync::atomic::Ordering::Relaxed);
         eprintln!("IW4L_SKATE_LOAD begin");
         skate_data::input_config::StockGameplayConfig::load(root).map_err(|e| e.to_string())?;
         let assets = skate_data::GameAssets::load(root).map_err(|e| e.to_string())?;
         let graphs = StockGraphs::load(root, &assets)?;
         let map = collision_map(triangles, rails, spawn, heading);
         eprintln!("IW4L_SKATE_LOAD graphs {}ms", started.elapsed().as_millis());
+        LOAD_STEP.store(2, std::sync::atomic::Ordering::Relaxed);
         let physics = GamePhysics::load_with_map(root, Some(&map))?;
         eprintln!(
             "IW4L_SKATE_LOAD physics {}ms",
@@ -63,8 +68,11 @@ impl Session {
         // gm_sk8 addition: the stock gesture set (first four in table order),
         // so the D-pad gestures have selections before the add-on sends its own
         physics.set_gesture_preferences(Some([0, 1, 2, 3]));
+        LOAD_STEP.store(3, std::sync::atomic::Ordering::Relaxed);
         let skater = SkaterRuntime::load(root, &graphs, &physics, "easy")?;
+        let base_gravity = physics.settings.step.simulation.gravity_acceleration;
         eprintln!("IW4L_SKATE_LOAD skater {}ms", started.elapsed().as_millis());
+        LOAD_STEP.store(4, std::sync::atomic::Ordering::Relaxed);
         Ok(Self {
             physics,
             skater,
@@ -75,6 +83,7 @@ impl Session {
             markers: crate::session_marker::Runtime::load(root)?,
             forced_wipeout: 0,
             loose_board_friction: 0.0,
+            base_gravity,
         })
     }
     /// A builder for collision to swap in later, usable on another thread.
@@ -397,6 +406,12 @@ impl Session {
         self.advance_published()
     }
     fn advance_published(&mut self) -> Result<(), String> {
+        let g = skate_core::cheats::gravity_scale();
+        self.physics.settings.step.simulation.gravity_acceleration = skate_core::math::Vector3::new(
+            self.base_gravity.x * g,
+            self.base_gravity.y * g,
+            self.base_gravity.z * g,
+        );
         let published = self.input.tick_input();
         self.markers
             .advance(&self.input, &self.physics, &mut self.skater);
@@ -650,6 +665,13 @@ impl InputFrame {
     pub fn mask_buttons(&mut self, mask: u16) {
         for s in self.samples.iter_mut().flatten() {
             s.state.buttons &= !mask;
+        }
+    }
+    /// gm_sk8 addition: the right stick and its click kept from the skater.
+    pub fn mask_right_stick(&mut self) {
+        for s in self.samples.iter_mut().flatten() {
+            s.state.right = [0, 0];
+            s.state.buttons &= !0x0080;
         }
     }
     /// Each slot's XInput packet number, None if nothing answers there (gm_sk8

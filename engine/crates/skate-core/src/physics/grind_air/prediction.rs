@@ -23,7 +23,7 @@ pub(super) fn project(
     let acceleration_step = madd(
         input.up,
         s.stomp * input.timestep,
-        [0., input.timestep * f32::from_bits(0xc11c_cccd), 0., 0.],
+        [0., input.timestep * f32::from_bits(0xc11c_cccd) * crate::cheats::gravity_scale(), 0., 0.],
     );
     for frame in 0..s.frames {
         samples[frame] = s.points.map(|p| {

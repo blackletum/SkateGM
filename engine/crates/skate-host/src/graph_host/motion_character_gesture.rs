@@ -302,7 +302,7 @@ fn animation_name(
     ))
 }
 //82F881D0..83C4 constructs this exact37-entry table at830BF5D8.
-const NAMES: [&str; 37] = [
+pub(crate) const NAMES: [&str; 37] = [
     "B_GSTR_AIRGUITAR",
     "B_GSTR_AIRPLANE",
     "B_GSTR_BOXING",

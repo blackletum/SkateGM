@@ -34,16 +34,28 @@ function K.Read(state,blocked,menu)
 	local lt,rt=held(KEY_Q) and 1 or 0,held(KEY_E) and 1 or 0
 	return {b,lt,rt,lx,ly,rx,ry},b~=0 or lx~=0 or ly~=0 or rx~=0 or ry~=0 or lt~=0 or rt~=0
 end
+function K.RightStickHeld(lb,rx,ry,click,holding)
+	if lb then return true end
+	return holding and (rx~=0 or ry~=0 or click)
+end
+function K.WithoutRightStick(values)
+	local b=values[1]
+	K.rsHeld=K.RightStickHeld(bit.band(b,0x100)~=0,values[6],values[7],bit.band(b,0x80)~=0,K.rsHeld)
+	if not K.rsHeld then return values end
+	return {bit.band(b,bit.bnot(0x80)),values[2],values[3],values[4],values[5],0,0}
+end
 function K.Step(S,p,dt)
 	if not K.Enabled() then
 		skategm.Step(dt,true,0,0,0,0,0,0,0)
 		S.keyboardActive=false
 		S.keyboardButtons=0
-		S.flickitInput={x=p.padRX or 0,y=p.padRY or 0}
+		local lb=bit.band(p.padButtons or 0,0x100)~=0
+		S.flickitInput={x=lb and 0 or (p.padRX or 0),y=lb and 0 or (p.padRY or 0)}
 		return
 	end
 	local blocked=K.Blocked(S)
 	local values,active=K.Read(p.state,blocked)
+	values=K.WithoutRightStick(values)
 	local useKeyboard=(virtualPad:GetBool() and not K.hardware) or active or K.release
 	if active then K.owner="keyboard" end
 	K.release=active

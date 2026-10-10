@@ -39,6 +39,9 @@ impl Requests {
     }
     ///A repeated request increments the original counter even if its bit was set.
     pub fn request(&mut self, index: usize, value: f32) {
+        if crate::cheats::vetoes(index) {
+            return;
+        }
         self.reasons[index] = true;
         self.values[index] = value;
         self.count = self.count.wrapping_add(1);
@@ -66,6 +69,7 @@ impl Requests {
     ///82DB9100 first excludes runout, then combines reason OR with2480bit3.
     pub fn requests_wipeout(&self, frame: &super::RequestInput) -> bool {
         !self.requests_runout(frame)
-            && (self.reasons.iter().any(|&v| v) || frame.flags_2480 & (1 << 3) != 0)
+            && (self.reasons.iter().any(|&v| v)
+                || (frame.flags_2480 & (1 << 3) != 0 && !crate::cheats::no_bail()))
     }
 }

@@ -106,6 +106,47 @@ local function Shadowed(text, font, x, y, col, ax, ay, alpha)
 	draw.SimpleText(text, font, x, y, textCol, ax, ay)
 end
 
+S.WAIT_FADE, S.WAIT_BLUE = 0.25, Color(120, 220, 255)
+local logoMat
+function S.PaintWait(w, h, now, since, title, sub, logo, progress)
+	Fonts()
+	local k = math.Clamp((now - since) / S.WAIT_FADE, 0, 1)
+	local bw = math.floor(math.max(w * 0.3, h * 0.5))
+	local pad = math.floor(h * 0.02)
+	local logoH = logo and math.floor(h * 0.075) or 0
+	local th = math.floor(h * 0.025)
+	local bh = pad * 3 + logoH + (logo and pad or 0) + th + math.floor(h * 0.022) + math.floor(h * 0.008)
+	local x, y = math.floor((w - bw) / 2), math.floor(h * 0.42 - bh / 2)
+	draw.RoundedBox(12, x, y, bw, bh, Color(0, 0, 0, 205 * k))
+	draw.RoundedBoxEx(12, x, y, bw, 4, Color(S.WAIT_BLUE.r, S.WAIT_BLUE.g, S.WAIT_BLUE.b, 255 * k), true, true, false, false)
+	local cy = y + pad
+	if logo then
+		logoMat = logoMat or Material("skategm/logo.png", "smooth")
+		local lw = logoH * 682 / 350
+		surface.SetMaterial(logoMat)
+		surface.SetDrawColor(255, 255, 255, 255 * k)
+		surface.DrawTexturedRect(w / 2 - lw / 2, cy, lw, logoH)
+		cy = cy + logoH + pad
+	end
+	Shadowed(title, "skategm_big", w / 2, cy, Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, k)
+	cy = cy + th + math.floor(h * 0.006)
+	if sub then Shadowed(sub, "skategm_cmid", w / 2, cy, Color(190, 200, 210), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP, k) end
+	local barW, barH = bw - pad * 4, math.max(4, math.floor(h * 0.006))
+	local bx, by = x + pad * 2, y + bh - pad - barH
+	draw.RoundedBox(barH / 2, bx, by, barW, barH, Color(255, 255, 255, 30 * k))
+	if progress then
+		local shown = S.waitShown or 0
+		shown = math.max(shown, shown + (math.Clamp(progress, 0, 1) - shown) * math.min(1, FrameTime() * 8))
+		S.waitShown = shown
+		local fill = math.floor(barW * shown + 0.5)
+		if fill > 0 then draw.RoundedBox(barH / 2, bx, by, fill, barH, Color(S.WAIT_BLUE.r, S.WAIT_BLUE.g, S.WAIT_BLUE.b, 255 * k)) end
+		return
+	end
+	local seg = barW * 0.28
+	local pos = (math.sin((now - since) * 2.4) * 0.5 + 0.5) * (barW - seg)
+	draw.RoundedBox(barH / 2, bx + pos, by, seg, barH, Color(S.WAIT_BLUE.r, S.WAIT_BLUE.g, S.WAIT_BLUE.b, 255 * k))
+end
+
 S.HELD_SHOW = 0.25
 function S.HudPaint(w, h, now)
 	if S.phase ~= "on" then return end
@@ -114,14 +155,13 @@ function S.HudPaint(w, h, now)
 	-- (said only once it lasts: a hold of a few frames flashing it up is worse)
 	if S.pose and S.pose.held then S.heldSince = S.heldSince or now else S.heldSince = nil end
 	if S.heldSince and now - S.heldSince >= S.HELD_SHOW then
-		local bw, bh = w * 0.42, h * 0.13
-		if draw.RoundedBox then draw.RoundedBox(12, (w - bw) / 2, h * 0.42 - bh / 2, bw, bh, Color(0, 0, 0, 170)) end
-		Shadowed("Waiting for collision to load...", "skategm_big", w / 2, h * 0.42 - bh * 0.15, Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+		S.PaintWait(w, h, now, S.heldSince + S.HELD_SHOW, "Waiting for collision to load...", "the ground here is still being built")
 	end
 	local show = cvHud:GetBool()
 	local white = Color(255, 255, 255)
 	local original = show and S.OriginalHudActive and S.OriginalHudActive()
-	if original then
+	local lbMenu = S.LBMenuShown and S.LBMenuShown()
+	if original and not lbMenu then
 		local ok, err = pcall(S.OriginalHudPaint, w, h)
 		render.SetStencilEnable(false)
 		if not ok and not S.originalHudErr then S.originalHudErr = tostring(err) Say("trick display error: " .. S.originalHudErr, true) end
@@ -134,7 +174,7 @@ function S.HudPaint(w, h, now)
 	-- line score (with its multiplier), its timer bar, the pending sequence
 	local lx, base = w * 0.03, h * 0.78
 	local active = H.line > 0 or H.seq > 0 or H.lineT > 0
-	if active and show and cvLine:GetBool() and not original then
+	if active and show and cvLine:GetBool() and not original and not lbMenu then
 		local y = base
 		Shadowed(Commas(H.line), "skategm_huge", lx, y, white, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP)
 		if H.mult > 1.001 then
@@ -156,7 +196,7 @@ function S.HudPaint(w, h, now)
 	-- trick name, just above the line score, fading out after it was last done
 	local age = now - H.trickT
 	local ty = base - h * 0.035
-	if H.trick ~= "" and age < 2.5 and show and cvTrick:GetBool() and not original then
+	if H.trick ~= "" and age < 2.5 and show and cvTrick:GetBool() and not original and not lbMenu then
 		local a = age < 1.8 and 1 or 1 - (age - 1.8) / 0.7
 		Shadowed(string.upper(H.trick), "skategm_big", lx, ty, white, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP, a)
 		if H.switch then Shadowed("SWITCH", "skategm_csmall", lx, ty - h * 0.0125, Color(200, 200, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP, a) end
@@ -174,11 +214,15 @@ function S.HudPaint(w, h, now)
 		local eage = now - e.t
 		if eage > 1.8 then table.remove(H.events, i) end
 	end
-	for _, e in ipairs((show and cvCallouts:GetBool() and not original) and H.events or {}) do
+	for _, e in ipairs((show and cvCallouts:GetBool() and not original and not lbMenu) and H.events or {}) do
 		local eage = now - e.t
 		local a = eage < 1.2 and 1 or 1 - (eage - 1.2) / 0.6
 		Shadowed(e.text, e.big and "skategm_big" or "skategm_cmid", lx, ey, e.col, TEXT_ALIGN_LEFT, TEXT_ALIGN_TOP, a)
 		ey = ey - h * (e.big and 0.03 or 0.0225)
+	end
+	if S.MarkerFadePaint then
+		S.MarkerFadePaint(w, h, now, math.Clamp(now - (S.markerFadeAt or now), 0, 0.1))
+		S.markerFadeAt = now
 	end
 end
 

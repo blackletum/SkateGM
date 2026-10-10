@@ -1,7 +1,16 @@
 # Changelog
 
-## 8.01
+## 8.1
 
+- **Skate 3 music while you skate**: the installer now decodes the soundtrack from your game files.
+    - LB + right stick: click to pause / play, right to skip, left to start the song over, up / down for volume
+    - Can be disabled in Settings > Audio
+- **Rumble**: the controller now vibrates when landing, popping, grinding, etc. Can be disabled and tweaked in Settings > Advanced.
+- **Cheats**: disable bailing, disable bails from falling from high heights, and change gravity factor. **Single-player only for now.**
+- **Skater settings**: added previews for gestures, stances, postures, and updated the playermodel picker to be a grid instead of a list.
+- **Returning to the marker**: added the static fading in when returning to marker, like in Skate 3.
+- **Loading**: added a nicer-looking loading screen, and added a progress bar.
+- **Invites**: added ability to decline invites with `LB` + `D-Pad left`. Rebound accepting to `LB` +  `D-Pad Right` 
 - Fixed invisible playermodels when a conflicting add-on also manages player transparency.
 
 ## 8.0

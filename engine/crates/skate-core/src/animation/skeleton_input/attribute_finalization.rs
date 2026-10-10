@@ -88,7 +88,7 @@ impl Accumulator {
             //by PrepareJump. Keep the recovered source's distinct routing.
             extra.jump_controls=[clamp_control(map.value(64)),clamp_control(map.value(68))];
         }
-        if input.external_impulse_active {fields.flags2468|=0x40000;}
+        if input.external_impulse_active && !crate::cheats::no_bail() {fields.flags2468|=0x40000;}
         //82BDC650 reads a BYTE at10932, the high byte of this big-endian
         //word. The later publications read the complete word separately.
         extra.flags2480=(extra.flags2480&!8)|((input.animation_flags>>24)&8);

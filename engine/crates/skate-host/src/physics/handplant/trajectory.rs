@@ -91,7 +91,7 @@ impl Handplant {
             let trajectory = Trajectory {
                 position,
                 velocity,
-                acceleration: GRAVITY,
+                acceleration: gravity(),
                 duration: 3.0,
             };
             final_trajectory = trajectory;
@@ -249,7 +249,7 @@ fn apex_position(coping: V, side: V, radius: f32, angle: f32) -> V {
     madd(side, radius * sin, madd(UP, radius * cos, coping))
 }
 fn to_apex(start: V, end: V) -> Trajectory {
-    let t = ((-2.0 * GRAVITY[1]) * (end[1] - start[1])).sqrt() * reciprocal(-GRAVITY[1]);
+    let t = ((-2.0 * gravity()[1]) * (end[1] - start[1])).sqrt() * reciprocal(-gravity()[1]);
     arc_between(start, end, t)
 }
 
@@ -283,18 +283,18 @@ mod tests {
     }
 }
 fn from_apex(start: V, end: V) -> Trajectory {
-    let t = ((-2.0 * GRAVITY[1]) * (start[1] - end[1])).sqrt() * reciprocal(-GRAVITY[1]);
+    let t = ((-2.0 * gravity()[1]) * (start[1] - end[1])).sqrt() * reciprocal(-gravity()[1]);
     arc_between(start, end, t)
 }
 fn arc_between(start: V, end: V, time: f32) -> Trajectory {
     let velocity = scale(
-        sub(sub(end, start), scale(GRAVITY, 0.5 * time * time)),
+        sub(sub(end, start), scale(gravity(), 0.5 * time * time)),
         reciprocal(time),
     );
     Trajectory {
         position: start,
         velocity,
-        acceleration: GRAVITY,
+        acceleration: gravity(),
         duration: time,
     }
 }

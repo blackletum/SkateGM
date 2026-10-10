@@ -1,6 +1,6 @@
 //! Original82D78EE8 and its82D60B98/82D60C80,82D609E0,82D60B00 arithmetic.
 //! Uses the existing Trajectory evaluations; no alternative trajectory owner.
-use super::{GRAVITY, Input, Manager, STEP, Settings, Trajectory, Vector};
+use super::{gravity, Input, Manager, STEP, Settings, Trajectory, Vector};
 use crate::physics::board_motion_output::inverse_length_squared;
 use crate::player::wipeout_state::math::{add, dot, length, madd, reciprocal, scale, sub};
 
@@ -72,9 +72,9 @@ impl Manager {
             position,
             velocity: sub(velocity, board_velocity),
             acceleration: if airborne_board {
-                scale(GRAVITY, 0.5)
+                scale(gravity(), 0.5)
             } else {
-                GRAVITY
+                gravity()
             },
             duration: -1.,
         };
@@ -89,18 +89,18 @@ impl Manager {
         };
         //822F8BD4=9.8;82060C50=2. Min-speed time is clamped to [.75t,1.3t].
         let distance = length(sub(position, target));
-        let optimal = square_root(reciprocal(f32::from_bits(0x411c_cccd)) * (2. * distance));
+        let optimal = square_root(reciprocal(f32::from_bits(0x411c_cccd) * crate::cheats::prediction_gravity_scale()) * (2. * distance));
         let proposed_time = (time * 1.3).min((time * 0.75).max(optimal));
         self.proposed_96 = Trajectory {
             position,
             velocity: add(
                 sub(
                     scale(sub(target, position), reciprocal(proposed_time)),
-                    scale(scale(GRAVITY, 0.5), proposed_time),
+                    scale(scale(gravity(), 0.5), proposed_time),
                 ),
                 p.board_velocity_400,
             ),
-            acceleration: GRAVITY,
+            acceleration: gravity(),
             duration: -1.,
         };
         self.ik_offset_176 = sub(target, relative.position_at(time));

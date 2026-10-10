@@ -19,9 +19,9 @@ impl Manager {
                 position,
                 velocity: sub(
                     scale(sub(target, position), reciprocal(time)),
-                    scale(scale(GRAVITY, 0.5), time),
+                    scale(scale(gravity(), 0.5), time),
                 ),
-                acceleration: GRAVITY,
+                acceleration: gravity(),
                 duration: time,
             },
             radius: 0.3,

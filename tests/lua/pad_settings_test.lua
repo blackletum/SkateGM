@@ -99,9 +99,26 @@ press(B.A)
 local names = {}
 for _, r in ipairs(SET.Top().rows) do names[#names + 1] = r.label end
 check("Model lists every playermodel, the current one picked", table.concat(names, ",") == "alyx,barney,kleiner" and SET.Top().sel == 3)
+check("... laid out as a grid of model pictures", SET.Top().grid and SET.Top().grid.cols == SET.GRID_COLS and type(SET.Top().grid.cell) == "function")
 press(B.UP)
+check("... up from the first line stays put", SET.Top().sel == 3)
+press(B.LEFT)
 press(B.A)
-check("A picks it and goes back", cvars_.cl_playermodel == "barney" and SET.Top().title == "Skater")
+check("left goes to the one before; A picks it and goes back", cvars_.cl_playermodel == "barney" and SET.Top().title == "Skater")
+do
+	local gridRows = {}
+	for i = 1, 12 do gridRows[i] = { label = "m" .. i } end
+	local stack = { { rows = gridRows, sel = 3, grid = { cols = 5, cell = function() end } } }
+	local L = SKATEGM_UI.List
+	L.Input(stack, B.DOWN)
+	local a = stack[1].sel
+	L.Input(stack, B.DOWN)
+	local b = stack[1].sel
+	L.Input(stack, B.DOWN)
+	check("grid: down a line, then to the last one on a short line, then stays", a == 8 and b == 12 and stack[1].sel == 12)
+	L.Input(stack, B.UP)
+	check("... up a line from there", stack[1].sel == 7)
+end
 press(B.DOWN)
 press(B.RIGHT)
 check("colour: D-pad right picks the next colour", cvars_.cl_playercolor ~= "0.24 0.34 0.41")
@@ -179,7 +196,15 @@ pad.rx = 0
 check("right stick turns the preview", math.abs(((SET.spin - spin) % 360) - SET.STICK_TURN * 0.5) < 1)
 local held = SET.spin
 frame(0, 0.5)
-check("... and it holds there for a moment, then spins slowly again", SET.spin == held)
+check("... and it holds there for a moment", SET.spin == held)
+SET.previewKind = "board"
+SET.stickAt = -100
+SET.Think({ rx = 0, ry = 0 }, 10, 1)
+check("the board preview then spins slowly again", math.abs(((SET.spin - held) % 360) - SET.SPIN) < 1e-6)
+SET.previewKind = "model"
+for i = 1, 60 do SET.Think({ rx = 0, ry = 0 }, 10 + i * 0.05, 0.05) end
+check("the player preview doesn't: it turns back to face the front", SET.spin == 0)
+SET.previewKind = nil
 
 press(B.B)
 go("Audio")
@@ -187,7 +212,7 @@ press(B.A)
 local audio = {}
 for _, r in ipairs(SET.Top().rows) do audio[#audio + 1] = (r.heading and "#" or "") .. r.label end
 local allA = table.concat(audio, "|")
-check("Audio: board sounds, set, volume, rolling, rocket; minigame cues, music; boombox", allA:find("#Board|Board sounds|Sound set|Volume|Rolling sound|Rocket sound", 1, true) and allA:find("#Minigames|Cues", 1, true) and allA:find("fades)|Music|Music volume|#Boombox", 1, true) and allA:find("#Boombox|Boombox volume", 1, true))
+check("Audio: board sounds, set, volume, rolling, rocket; minigame cues, music; Skate 3 music", allA:find("#Board|Board sounds|Sound set|Volume|Rolling sound|Rocket sound", 1, true) and allA:find("#Minigames|Cues", 1, true) and allA:find("fades)|Music|Music volume|#Skate 3 music", 1, true) and allA:find("#Skate 3 music|Music while skating", 1, true) and not allA:find("Boombox", 1, true))
 go("Rolling sound")
 press(B.RIGHT)
 check("a sound: changed, and played so you hear it", cvars_.skategm_roll_sound == "2" and played[#played] == "b.wav")
@@ -232,11 +257,66 @@ press(B.B)
 press(B.B)
 check("B on the main page closes Settings, control back", not SET.Active() and api.frozen == false and api.blocked == false)
 
+do
+	local calls = {}
+	local hadMod, hadS = skategm, SkateGM
+	skategm = { PreviewPose = function(path, posture, gesture, secs, goofy)
+		calls[#calls + 1] = { path = path, posture = posture, gesture = gesture, t = secs, goofy = goofy }
+		return { HIPS = { 10, 0, 35 }, HEAD = { 0, 0, 60 } }
+	end }
+	SkateGM = { DataPath = function() return "C:/data/assets" end }
+	cvars_.skategm_posture, cvars_.skategm_gesture_left, cvars_.skategm_stance = "2", "5", "1"
+	local P = SET.SkatePose(10, { gestureDir = "left" }, 90)
+	local c = calls[1]
+	check("the preview's pose: from the engine's own animations, with my posture and that row's gesture", c and c.path == "C:/data/assets" and c.posture == 2 and c.gesture == 5 and c.goofy == 1 and c.t == 0)
+	check("... turned with the preview", P and math.abs(P.HIPS.x) < 1e-6 and math.abs(P.HIPS.y - 10) < 1e-6 and P.HIPS.z == 35)
+	skategm.PreviewPose = function(path, posture, gesture, secs, goofy)
+		calls[#calls + 1] = { path = path, posture = posture, gesture = gesture, t = secs, goofy = goofy }
+		if goofy == 1 then return { HIPS = { 0, 0, 35 }, RIGHTUPLEG = { 5, 0, 30 }, LEFTUPLEG = { -5, 0, 30 } } end
+		return { HIPS = { 0, 0, 35 }, RIGHTUPLEG = { -5, 0, 30 }, LEFTUPLEG = { 5, 0, 30 } }
+	end
+	cvars_.skategm_stance = "0"
+	local front = SET.SkatePose(10, { gestureDir = "left" }, 0)
+	cvars_.skategm_stance = "1"
+	local goofy = SET.SkatePose(10, { gestureDir = "left" }, 0)
+	check("the preview faces the camera (its right hip on its right), goofy too", front.RIGHTUPLEG.y < -4.9 and goofy.RIGHTUPLEG.y < -4.9 and math.abs(front.RIGHTUPLEG.x) < 1e-6)
+	table.remove(calls) table.remove(calls)
+	SET.SkatePose(11.5, { gestureDir = "left" }, 0)
+	check("... the gesture plays on in time", calls[2].t == 1.5)
+	SET.SkatePose(12, { gestureId = 9 }, 0)
+	check("... a gesture in the list: that one, from its start", calls[3].gesture == 9 and calls[3].t == 0)
+	SET.SkatePose(13, { label = "Posture" }, 0)
+	check("... any other row: no gesture, just the posture", calls[4].gesture == -1 and calls[4].posture == 2)
+	skategm = { }
+	check("an older module without PreviewPose: the plain preview", SET.SkatePose(14, nil, 0) == nil)
+	skategm, SkateGM = hadMod, hadS
+	cvars_.skategm_posture, cvars_.skategm_gesture_left, cvars_.skategm_stance = nil, nil, nil
+end
 SET.StylePage = function() return { title = "Style", rows = { { label = "Stance" }, { label = "Style" } } } end
 local sk = {}
 for _, r in ipairs(SET.SkaterPage().rows) do sk[#sk + 1] = (r.heading and "#" or "") .. r.label end
+SkateGM.skate3Music = { Have = function() return true end }
+local music = {}
+for _, r in ipairs(SET.AudioPage().rows) do music[#music + 1] = (r.heading and "#" or "") .. r.label .. (r.disabled and "(off)" or "") end
+check("Skate 3 music installed: an on / off row and its volume", table.concat(music, "|"):find("#Skate 3 music|Music while skating|Volume", 1, true) ~= nil)
+SkateGM.skate3Music = nil
+music = {}
+for _, r in ipairs(SET.AudioPage().rows) do music[#music + 1] = r.label .. (r.disabled and "(off)" or "") end
+check("... not installed: the row says so and can't be changed", table.concat(music, "|"):find("Music while skating(off)", 1, true) ~= nil)
 check("with the style add-on: one Skater page, Playermodel then Style", table.concat(sk, "|") == "#Playermodel|Model|Colour|#Style|Stance|Style" and SET.SkaterPage().preview ~= nil)
 local main = {}
 for _, r in ipairs(SET.MainPage().rows) do main[#main + 1] = r.label end
 check("... and no separate Style section", table.concat(main, ",") == "Skater,Board,Camera,Display,Audio,Advanced")
 SET.StylePage = nil
+
+local oldSG = SkateGM
+SkateGM = { CheatsAllowed = function() return true end }
+local withCheats = {}
+for _, r in ipairs(SET.MainPage().rows) do withCheats[#withCheats + 1] = r.label end
+local cheats = {}
+for _, r in ipairs(SET.CheatsPage().rows) do cheats[#cheats + 1] = r.label end
+check("single player: a Cheats section with bailing, fall bails and gravity", withCheats[#withCheats] == "Cheats" and table.concat(cheats, ",") == "No bailing,No fall bails,Gravity")
+SkateGM = { CheatsAllowed = function() return false end }
+local without = SET.MainPage().rows
+check("  not on a server", without[#without].label == "Advanced")
+SkateGM = oldSG

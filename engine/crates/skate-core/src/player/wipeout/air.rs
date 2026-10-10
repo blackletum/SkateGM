@@ -46,9 +46,14 @@ pub fn check(state: &mut Requests, s: &Settings, mode: &Mode, f: &Frame, use_com
     if f.board_material_flags & (1 << 29) != 0 {
         xz *= a.light_dmo_scalar;
     }
-    common::closing(state, f, xz, y);
+    let landing_ok = crate::cheats::NO_FALL_BAIL.load(core::sync::atomic::Ordering::Relaxed)
+        && (f.board_contact || f.wheel_contact);
+    if !landing_ok {
+        common::closing(state, f, xz, y);
+    }
     let displacement = a.max_displacement * scalar;
-    if mode.check_squash && f.maximum_pose_error > a.max_squash * scalar {
+    if landing_ok {
+    } else if mode.check_squash && f.maximum_pose_error > a.max_squash * scalar {
         state.request(18, 0.0);
     } else if dot3(f.pose_error, f.pose_error) > displacement * displacement {
         state.request(1, 0.0);

@@ -1391,14 +1391,15 @@ else
 	function Mode:Leave() self:Send({ cmd = "leave" }) end
 
 	-- invites: a member of a game in its lobby asks the server to send one;
-	-- it lasts while that game is still in its lobby (LB + RT joins)
+	-- it lasts while that game is still in its lobby (LB + D-pad right joins,
+	-- LB + D-pad left turns it down)
 	M.NET_INVITE = "skategm_modes_invite"
 	M.INVITE_TOAST = 8
 	function M.ReceiveInvite(id, session, from, now)
 		local mode = M.modes[id]
 		if not mode then return end
 		M.invite = { mode = id, session = tonumber(session) or (session ~= "" and session or nil), from = from, at = now or RealTime() }
-		mode:Say(from .. " invited you to " .. mode.title .. ": LB + RT to join")
+		mode:Say(from .. " invited you to " .. mode.title .. ": LB + D-pad right to join, LB + D-pad left to decline")
 		if surface and surface.PlaySound then surface.PlaySound("buttons/button17.wav") end
 	end
 	if net and net.Receive then
@@ -1430,12 +1431,15 @@ else
 		M.invite = nil
 		M.modes[inv.mode]:Join(inv.session)
 	end
+	function M.DeclineInvite()
+		M.invite = nil
+	end
 	function M.DrawInvite(w, h, now)
 		if M.HudHidden() then return end
 		local inv = M.invite
 		if not inv or (now - inv.at) > M.INVITE_TOAST or not M.InviteActive() then return end
 		local mode = M.modes[inv.mode]
-		local text = M.ButtonWords(inv.from .. " invited you to " .. mode.title .. "   LB + RT to join")
+		local text = M.ButtonWords(inv.from .. " invited you to " .. mode.title .. "   LB + D-pad right to join, LB + D-pad left to decline")
 		local PAD = SKATEGM_UI and SKATEGM_UI.pad
 		if PAD and PAD.Fonts then PAD.Fonts() end
 		local font = PAD and "skategm_ui_row" or "DermaDefaultBold"

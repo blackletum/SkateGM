@@ -60,7 +60,7 @@ impl State {
             let mut target = settings.slope_speed_scalar.evaluate(slope_degrees) * input.desired_speed;
             if !(input.desired_speed <= 0.5) && !(target >= self.speed) {
                 let gravity_delta = if self.velocity[1] > 0.0 {
-                    (f32::from_bits(0xc11c_cccd) * dt) * select(-direction[1], 0.0, direction[1])
+                    (f32::from_bits(0xc11c_cccd) * crate::cheats::gravity_scale() * dt) * select(-direction[1], 0.0, direction[1])
                 } else { 0.0 };
                 let delta = target - self.speed;
                 let limited_delta = select(delta - -2.0, delta, -2.0) * dt;

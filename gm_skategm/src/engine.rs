@@ -85,6 +85,17 @@ pub static INPUT_BLOCKED: std::sync::atomic::AtomicBool = std::sync::atomic::Ato
 pub static PAD_NAME: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 pub static PAD_KIND: std::sync::Mutex<&'static str> = std::sync::Mutex::new("xbox");
 pub static MARKER_BLOCKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub static LB_RIGHT_STICK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+pub fn right_stick_held(lb: bool, right: [i16; 2], click: bool, holding: bool) -> bool {
+    if !LB_RIGHT_STICK.load(std::sync::atomic::Ordering::Relaxed) {
+        return false;
+    }
+    if lb {
+        return true;
+    }
+    let centred = (right[0] as i32).abs() < 8000 && (right[1] as i32).abs() < 8000;
+    holding && (!centred || click)
+}
 /// Buttons kept from the engine (a minigame uses them: left stick in for items).
 pub static MASKED_BUTTONS: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
 /// Rolling friction on a loose board (m/s^2, f32 bits; 0 = the game's own).
@@ -158,6 +169,65 @@ pub fn set_camera_shake(on: bool) {
     #[cfg(not(feature = "engine"))]
     CAMERA_SHAKE.store(on, std::sync::atomic::Ordering::Relaxed);
 }
+pub fn set_cheats(no_bail: bool, no_fall_bail: bool, gravity: f32) {
+    #[cfg(feature = "engine")]
+    {
+        use skate_host::cheats;
+        cheats::NO_BAIL.store(no_bail, std::sync::atomic::Ordering::Relaxed);
+        cheats::NO_FALL_BAIL.store(no_fall_bail, std::sync::atomic::Ordering::Relaxed);
+        cheats::set_gravity_scale(gravity);
+    }
+    #[cfg(not(feature = "engine"))]
+    {
+        *CHEATS.lock().unwrap() = (no_bail, no_fall_bail, gravity);
+    }
+}
+#[cfg(not(feature = "engine"))]
+pub static CHEATS: std::sync::Mutex<(bool, bool, f32)> = std::sync::Mutex::new((false, false, 1.0));
+#[derive(Clone, Copy, Default, PartialEq)]
+pub struct Rumble {
+    pub low: f32,
+    pub high: f32,
+    pub until: Option<std::time::Instant>,
+    pub seq: u64,
+}
+pub static RUMBLE: std::sync::Mutex<Rumble> = std::sync::Mutex::new(Rumble { low: 0.0, high: 0.0, until: None, seq: 0 });
+pub fn set_rumble(low: f32, high: f32, seconds: f32) {
+    let mut r = RUMBLE.lock().unwrap_or_else(|e| e.into_inner());
+    let clamp = |v: f32| if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 };
+    let (low, high) = (clamp(low), clamp(high));
+    let on = (low > 0.0 || high > 0.0) && seconds.is_finite() && seconds > 0.0;
+    r.low = if on { low } else { 0.0 };
+    r.high = if on { high } else { 0.0 };
+    r.until = on.then(|| std::time::Instant::now() + std::time::Duration::from_secs_f32(seconds.min(5.0)));
+    r.seq = r.seq.wrapping_add(1);
+}
+pub fn load_step() -> u32 {
+    #[cfg(feature = "engine")]
+    {
+        skate_host::bridge::LOAD_STEP.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    #[cfg(not(feature = "engine"))]
+    {
+        0
+    }
+}
+pub fn reset_load_step() {
+    #[cfg(feature = "engine")]
+    skate_host::bridge::LOAD_STEP.store(0, std::sync::atomic::Ordering::Relaxed);
+}
+pub fn preview_pose(root: &std::path::Path, posture: u32, gesture: Option<u32>, t: f32, mirror: bool) -> Result<(Vec<String>, Vec<[f32; 16]>), String> {
+    #[cfg(feature = "engine")]
+    {
+        let names = skate_host::preview::bone_names(root)?;
+        Ok((names, skate_host::preview::settings_pose(root, posture, gesture, t, mirror)?))
+    }
+    #[cfg(not(feature = "engine"))]
+    {
+        let _ = (root, posture, gesture, t, mirror);
+        Err("no engine in this build".into())
+    }
+}
 pub fn set_camera_type(kind: u32) {
     #[cfg(feature = "engine")]
     skate_host::CAMERA_TYPE.store(kind, std::sync::atomic::Ordering::Relaxed);
@@ -198,6 +268,7 @@ mod real {
         pad_buttons: u16,
         pad_triggers: [u8; 2],
         pad_sticks: [[i16; 2]; 2],
+        rs_held: bool,
         connected: bool,
         pads: crate::pad::Pads,
         /// the STYLE generation last applied
@@ -284,6 +355,7 @@ mod real {
                 pad_buttons: 0,
                 pad_triggers: [0, 0],
                 pad_sticks: [[0, 0], [0, 0]],
+                rs_held: false,
                 connected: false,
                 pads: crate::pad::Pads::default(),
                 style_gen: 0,
@@ -437,6 +509,11 @@ mod real {
                     let marker = marker_mask(frame.buttons());
                     if marker != 0 {
                         frame.mask_buttons(marker);
+                    }
+                    let b = frame.buttons();
+                    self.rs_held = super::right_stick_held(b & MARKER_MODIFIER != 0, frame.sticks()[1], b & 0x0080 != 0, self.rs_held);
+                    if self.rs_held {
+                        frame.mask_right_stick();
                     }
                     self.last_buttons = frame.buttons();
                     if super::INPUT_BLOCKED.load(std::sync::atomic::Ordering::Relaxed) {

@@ -133,11 +133,11 @@ impl Prediction {
             && end[1] - arc.position[1] > -0.2
         {
             //82D6E178 recomputes the native9.8 m/s² arc to the same end point.
-            let duration = (2. * length(sub(arc.position, end)) / 9.8)
+            let duration = (2. * length(sub(arc.position, end)) / (9.8 * crate::cheats::prediction_gravity_scale()))
                 .sqrt()
                 .mul_add(0.66, self.landing_frame as f32 * f32::from_bits(0x3bb9af72));
             if duration > 0.2 {
-                let acceleration = [0., -9.8, 0., 0.];
+                let acceleration = [0., -9.8 * crate::cheats::prediction_gravity_scale(), 0., 0.];
                 self.selected.velocity = sub(
                     scale(sub(end, arc.position), 1. / duration),
                     scale(acceleration, 0.5 * duration),

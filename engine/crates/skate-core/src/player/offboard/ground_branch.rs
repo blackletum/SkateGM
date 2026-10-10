@@ -50,7 +50,7 @@ pub fn integrate_alternate(
 ) {
     // Original830BD330 initializer82F826B0 stores [0,-9.8,0,0], using
     //82165A10 zero and822F8B40 C11CCCCD. It is not the splatted830BD400.
-    let gravity: Vector = [0.0, f32::from_bits(0xc11c_cccd), 0.0, 0.0];
+    let gravity: Vector = [0.0, f32::from_bits(0xc11c_cccd) * crate::cheats::gravity_scale(), 0.0, 0.0];
     *velocity_480 = std::array::from_fn(|i| gravity[i].mul_add(DT, velocity_480[i]));
     *speed_704 = magnitude(dot3(*velocity_480, *velocity_480));
     *position_48 = std::array::from_fn(|i| velocity_480[i].mul_add(DT, position_48[i]));

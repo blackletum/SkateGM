@@ -11,7 +11,7 @@ fn hippy_initializes_the_shared_manager_and_follows_gravity() {
     state.enter(&mut manager,entry());
     assert!(manager.trajectory_valid_164 && manager.force_257);
     assert_eq!(manager.trajectory_32.velocity[0],2.);
-    assert_eq!(manager.trajectory_32.acceleration,GRAVITY);
+    assert_eq!(manager.trajectory_32.acceleration,gravity());
     let t=manager.trajectory_32;
     assert!(t.position_at(0.1)[1]>t.position[1]);
     assert!(t.velocity_at(1.)[1]<0.);

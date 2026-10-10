@@ -161,3 +161,43 @@ do
 	ME.alpha = nil
 	render.SetBlend = oldBlend
 end
+
+do
+	local state = { blend = 0, override = "leaked" }
+	local old = { render.SetBlend, render.GetBlend, render.MaterialOverride }
+	render.SetBlend = function(a) state.blend = a end
+	render.GetBlend = function() return state.blend end
+	render.MaterialOverride = function(m) state.override = m end
+	local seen
+	local oldDraw = mine.DrawModel
+	mine.DrawModel = function() seen = { blend = state.blend, override = state.override } end
+	mine.Sk8Rig, mine.Sk8P, mine.valid = {}, pose(500), true
+	mine:RenderOverride()
+	print("another add-on's leftover blend and material override don't hide my skater", seen and seen.blend == 1 and seen.override == nil and "OK" or "<-- WRONG")
+	print("  its blend is put back afterwards", state.blend == 0 and "OK" or "<-- WRONG")
+	mine.DrawModel = oldDraw
+	render.SetBlend, render.GetBlend, render.MaterialOverride = old[1], old[2], old[3]
+end
+
+do
+	local sent
+	local oldMod, oldGame = skategm, game
+	skategm = { SetCheats = function(a, b, c) sent = { a, b, c } end }
+	game = { SinglePlayer = function() return false end }
+	S.ApplyCheats()
+	print("cheats are off on a server", sent and sent[1] == 0 and sent[2] == 0 and sent[3] == 1 and "OK" or "<-- WRONG")
+	game = { SinglePlayer = function() return true end }
+	sent = nil
+	S.ApplyCheats()
+	print("  and sent in single player", sent and sent[3] == 1 and "OK" or "<-- WRONG")
+	local cmds, values = {}, { skategm_cheat_nobail = "1", skategm_cheat_nofall = "0", skategm_cheat_gravity = "4" }
+	local oldGet, oldRun = GetConVar, RunConsoleCommand
+	GetConVar = function(n) return values[n] and { GetString = function() return values[n] end } end
+	RunConsoleCommand = function(n, v) cmds[n] = v end
+	sent = nil
+	S.ResetCheats()
+	print("a map loads: cheats back to their defaults, the engine told", cmds.skategm_cheat_nobail == "0" and cmds.skategm_cheat_gravity == "1" and cmds.skategm_cheat_nofall == nil
+		and sent and sent[1] == 0 and sent[2] == 0 and sent[3] == 1 and "OK" or "<-- WRONG")
+	GetConVar, RunConsoleCommand = oldGet, oldRun
+	skategm, game = oldMod, oldGame
+end

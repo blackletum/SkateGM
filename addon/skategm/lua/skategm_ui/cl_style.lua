@@ -93,9 +93,9 @@ timer.Create("skategm_style_apply", 2, 0, function() STYLE.Apply() ApplySettle()
 ---------------------------------------------------------------------------
 function SET.GesturePage(d)
 	local cv = cvGesture[d[1]]
-	local page = { title = "Gesture on " .. d[2], rows = {} }
+	local page = { title = "Gesture on " .. d[2], rows = {}, preview = SET.ModelPreview }
 	for i, name in ipairs(STYLE.GESTURES) do
-		page.rows[i] = { label = name, mark = function() return cv:GetInt() == i - 1 end,
+		page.rows[i] = { label = name, gestureId = i - 1, mark = function() return cv:GetInt() == i - 1 end,
 			run = function() RunConsoleCommand(cv:GetName(), tostring(i - 1)) SET.stack[#SET.stack] = nil end }
 		if cv:GetInt() == i - 1 then page.sel = i end
 	end
@@ -117,6 +117,7 @@ function SET.StylePage()
 	for _, d in ipairs(STYLE.DIRS) do
 		local row = SET.ChoiceRow(d[2], "skategm_gesture_" .. d[1], STYLE.GESTURES, nil, 0)
 		row.page = function() return SET.GesturePage(d) end
+		row.gestureDir = d[1]
 		row.aText = "Pick from the list"
 		rows[#rows + 1] = row
 	end

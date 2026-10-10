@@ -180,6 +180,7 @@ def install(gmod, xex, data, report, skip_convert=False, build_maps=True, map_na
     (garrysmod / 'data' / 'skategm' / 'datapath.txt').write_text(str((data / 'assets').resolve()).replace('\\', '/'), encoding='utf-8')
     install_hud(garrysmod, xex or remembered_source(data), data, report)
     install_sounds(gmod, xex or remembered_source(data), data, report)
+    install_music(gmod, xex or remembered_source(data), data, report)
     if build_maps:
         install_maps(gmod, xex or remembered_source(data), data, report, map_names)
     report('Done! Start Garry\'s Mod and pick the SkateGM gamemode, or in any other gamemode type '
@@ -239,6 +240,26 @@ def install_sounds(gmod, game, data, report):
         report('Skate 3 board sounds were skipped (the stock ones play): ' + (str(error) or type(error).__name__))
 
 
+def install_music(gmod, game, data, report):
+    try:
+        from tools.asset_pipeline import skate3_music
+        if skate3_music.installed(gmod):
+            report('Skate 3 music: already installed, keeping it')
+            return
+    except Exception:
+        traceback.print_exc()
+    if not game:
+        report('Skate 3 music: choose your Skate 3 disc image (.iso) or default.xex to hear its music while you skate.')
+        return
+    try:
+        import convert as exporter
+        report('Skate 3 music: decoding the songs (a couple of minutes)')
+        exporter.build_music(Path(game), Path(data), Path(gmod), payload_dir('vgmstream') / 'vgmstream-cli.exe')
+    except Exception as error:
+        traceback.print_exc()
+        report('Skate 3 music was skipped (no music while skating): ' + (str(error) or type(error).__name__))
+
+
 def install_maps(gmod, game, data, report, names=None):
     if not game:
         report('Skate 3 maps: choose your Skate 3 disc image (.iso) or default.xex to build them.')
@@ -271,6 +292,8 @@ def uninstall(gmod, data, report, remove_data=False):
     remove_tree(garrysmod / 'data' / 'skategm_hud')
     remove_tree(garrysmod / 'addons' / 'skategm_s3sounds')
     (garrysmod / 'data' / 'skategm' / 'skate3_sounds.json').unlink(missing_ok=True)
+    remove_tree(garrysmod / 'addons' / 'skategm_s3music')
+    (garrysmod / 'data' / 'skategm' / 'skate3_music.json').unlink(missing_ok=True)
     if remove_data:
         shutil.rmtree(data, ignore_errors=True)
     report('SkateGM removed.' + (' Your converted game data was deleted too.' if remove_data else ''))

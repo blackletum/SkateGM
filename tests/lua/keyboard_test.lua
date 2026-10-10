@@ -79,3 +79,11 @@ check("using the controller drops the mouse free camera", K.look == nil and K.ow
 K.look = Angle(10, 20, 0)
 K.Decorate(S, { pad = true, padButtons = 0, padLX = 0.05, padLY = 0, padRX = 0, padRY = 0, padLT = 0, padRT = 0 })
 check("... but a resting stick doesn't", K.look ~= nil)
+K.rsHeld = nil
+local out = K.WithoutRightStick({ 0x100 + 0x80 + 0x1000, 0, 0, 1, 0, 1, -1 })
+check("Z held: the arrows and Ctrl don't reach the skater (other keys do)", out[1] == 0x100 + 0x1000 and out[6] == 0 and out[7] == 0 and out[4] == 1)
+out = K.WithoutRightStick({ 0, 0, 0, 0, 0, 1, 0 })
+check("... Z let go with an arrow still down: kept until it's let go", out[6] == 0)
+out = K.WithoutRightStick({ 0, 0, 0, 0, 0, 0, 0 })
+out = K.WithoutRightStick({ 0, 0, 0, 0, 0, 1, 0 })
+check("... then the arrows flick again", out[6] == 1)

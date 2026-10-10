@@ -89,10 +89,11 @@ pub fn update(
         core::array::from_fn(|i| projected[i] - input.normal_464[i] * normal_speed),
         settings.normal_threshold,
     );
+    let scale = crate::cheats::gravity_scale();
     let gravity = clamp(
-        -tangent[1] * settings.gravity,
-        -settings.maximum_gravity_acceleration,
-        settings.maximum_gravity_acceleration,
+        -tangent[1] * settings.gravity * scale,
+        -settings.maximum_gravity_acceleration * scale,
+        settings.maximum_gravity_acceleration * scale,
     ) * dt;
 
     if input.frames_2580 < 30 {

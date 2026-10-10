@@ -140,14 +140,14 @@ pub(super) fn batch(info: LaunchInfo, input: SelectorInput, s: &SelectorSettings
 fn max_time(velocity: Vector, s: &SelectorSettings) -> f32 {
     let square = velocity[1].mul_add(
         velocity[1],
-        -(s.trajectory_max_drop * f32::from_bits(0xc19c_cccd)),
+        -(s.trajectory_max_drop * f32::from_bits(0xc19c_cccd) * crate::cheats::prediction_gravity_scale()),
     );
     let root = if square == 0.0 {
         0.0
     } else {
         square * inverse_length(square)
     };
-    ((-velocity[1] - root) * f32::from_bits(0xbdd0_fac6)).min(s.trajectory_max_time)
+    ((-velocity[1] - root) * f32::from_bits(0xbdd0_fac6) / crate::cheats::prediction_gravity_scale()).min(s.trajectory_max_time)
 }
 
 ///tTrajectory::AdjustTrajectory82D609E0 changes velocity only.

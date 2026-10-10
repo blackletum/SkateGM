@@ -316,6 +316,46 @@ fn flush_denormals() {
     }
 }
 
+static LOAD_STAGE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static LOAD_SEEN: Mutex<Option<(u32, Instant)>> = Mutex::new(None);
+const LOAD_STAGES: [(f32, f32, f32, &str); 6] = [
+    (0.0, 0.25, 2.0, "Reading the map"),
+    (0.25, 0.35, 0.6, "Building the collision"),
+    (0.35, 0.45, 0.4, "Starting the engine"),
+    (0.45, 0.55, 1.0, "Setting up the physics"),
+    (0.55, 0.97, 4.0, "Loading the skater"),
+    (0.97, 0.99, 0.3, "Almost there"),
+];
+
+fn load_stage_index() -> usize {
+    match LOAD_STAGE.load(std::sync::atomic::Ordering::Relaxed) {
+        0 | 1 => 0,
+        2 => 1,
+        _ => match engine::load_step() {
+            0 | 1 => 2,
+            2 => 3,
+            3 => 4,
+            _ => 5,
+        },
+    }
+}
+
+fn load_progress() -> (f32, &'static str) {
+    let s = load_stage_index();
+    let mut seen = LOAD_SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    let since = match *seen {
+        Some((was, at)) if was as usize == s => at,
+        _ => {
+            let now = Instant::now();
+            *seen = Some((s as u32, now));
+            now
+        }
+    };
+    let (a, b, expected, text) = LOAD_STAGES[s];
+    let k = 1.0 - (-since.elapsed().as_secs_f32() / expected).exp();
+    (a + (b - a) * k, text)
+}
+
 fn worker(
     root: PathBuf,
     floor: [f32; 3],
@@ -332,6 +372,8 @@ fn worker(
     let (builder_done_tx, builder_done) = channel::<()>();
     let run = || -> Result<(), String> {
         let start = Instant::now();
+        engine::reset_load_step();
+        LOAD_STAGE.store(1, std::sync::atomic::Ordering::Relaxed);
         // (a little above the floor, as for every teleport: see SPAWN_LIFT)
         let spawn = coords::to_skate([floor[0], floor[1], floor[2] + SPAWN_LIFT]);
         let heading = coords::heading_from_yaw(yaw);
@@ -366,8 +408,10 @@ fn worker(
             }
             None => (Scene::flat(centre, 8000.0), "flat test floor".to_string()),
         };
+        LOAD_STAGE.store(2, std::sync::atomic::Ordering::Relaxed);
         let (triangles, rails, first_stats, tags) = scene.build_tagged(centre);
         remember_collision(&triangles, &tags);
+        LOAD_STAGE.store(3, std::sync::atomic::Ordering::Relaxed);
         let mut sim = Sim::new(&root, triangles, rails, spawn, heading)?;
         let _ = replies.send(Reply::Ready { load_ms: start.elapsed().as_millis(), period: sim.period(), world: summary });
         let _ = replies.send(Reply::Wanted(scene.wanted()));
@@ -1183,6 +1227,14 @@ unsafe extern "C" fn set_marker_blocked(l: State) -> c_int {
     })
 }
 
+unsafe extern "C" fn set_lb_right_stick(l: State) -> c_int {
+    guarded(l, |lua| {
+        engine::LB_RIGHT_STICK.store(lua.number(1, 0.0) != 0.0, std::sync::atomic::Ordering::Relaxed);
+        lua.push_bool(true);
+        1
+    })
+}
+
 /// skategm.SetBoardFriction(units per second^2): slows a board nobody rides
 /// (after a bail, on foot) along the ground; 0 = the game's own rolling.
 unsafe extern "C" fn set_board_friction(l: State) -> c_int {
@@ -1270,6 +1322,11 @@ unsafe extern "C" fn poll(l: State) -> c_int {
         };
         drain(h);
         lua.field_str("status", h.status);
+        if h.status == "loading" {
+            let (progress, text) = load_progress();
+            lua.field_num("loadProgress", f64::from(progress));
+            lua.field_str("loadStage", text);
+        }
         if let Some(e) = &h.error {
             lua.field_str("error", e);
         }
@@ -1859,6 +1916,45 @@ unsafe extern "C" fn set_camera_shake(l: State) -> c_int {
     })
 }
 
+unsafe extern "C" fn preview_pose(l: State) -> c_int {
+    guarded(l, |lua| {
+        let Some(path) = lua.string(1) else { return fail(lua, "PreviewPose: expected (dataPath, posture, gesture, seconds, goofy)") };
+        let posture = lua.number(2, 0.0).max(0.0) as u32;
+        let gesture = lua.number(3, -1.0);
+        let gesture = (gesture >= 0.0).then_some(gesture as u32);
+        let t = lua.number(4, 0.0) as f32;
+        let mirror = lua.number(5, 0.0) != 0.0;
+        match engine::preview_pose(&PathBuf::from(path), posture, gesture, t, mirror) {
+            Ok((names, bones)) => {
+                lua.new_table(0, bones.len() as i32);
+                for (name, b) in names.iter().zip(&bones) {
+                    lua.push_vec(coords::from_skate(col(b, 3)));
+                    lua.set(name);
+                }
+                1
+            }
+            Err(e) => fail(lua, &e),
+        }
+    })
+}
+
+unsafe extern "C" fn rumble(l: State) -> c_int {
+    guarded(l, |lua| {
+        engine::set_rumble(lua.number(1, 0.0) as f32, lua.number(2, 0.0) as f32, lua.number(3, 0.0) as f32);
+        lua.push_bool(true);
+        1
+    })
+}
+
+/// skategm.SetCheats(no bail, no fall bail, gravity scale): single-player cheats.
+unsafe extern "C" fn set_cheats(l: State) -> c_int {
+    guarded(l, |lua| {
+        engine::set_cheats(lua.number(1, 0.0) != 0.0, lua.number(2, 0.0) != 0.0, lua.number(3, 1.0) as f32);
+        lua.push_bool(true);
+        1
+    })
+}
+
 /// skategm.SetCameraType(0 low | 1 high): Skate 3's two stock camera graphs.
 unsafe extern "C" fn set_camera_type(l: State) -> c_int {
     guarded(l, |lua| {
@@ -2090,6 +2186,7 @@ unsafe extern "C" fn warm_status(l: State) -> c_int {
 /// skategm.Stop()
 unsafe extern "C" fn stop(l: State) -> c_int {
     guarded(l, |_| {
+        pad::stop_rumble();
         shutdown();
         0
     })
@@ -2134,6 +2231,9 @@ pub unsafe extern "C" fn gmod13_open(l: State) -> c_int {
         ("SetSpeedLimit", set_speed_limit),
         ("SetAirDismountBlock", set_air_dismount_block),
         ("SetCameraShake", set_camera_shake),
+        ("Rumble", rumble),
+        ("PreviewPose", preview_pose),
+        ("SetCheats", set_cheats),
         ("SetCameraType", set_camera_type),
         ("SetStyle", set_style),
         ("SetDifficulty", set_difficulty),
@@ -2144,6 +2244,7 @@ pub unsafe extern "C" fn gmod13_open(l: State) -> c_int {
         ("KnockDown", knock_down),
         ("SetInputBlocked", set_input_blocked),
         ("SetMarkerBlocked", set_marker_blocked),
+        ("SetLBRightStick", set_lb_right_stick),
         ("SetButtonMask", set_button_mask),
         ("SetAirReset", set_air_reset),
         ("SetBoardFriction", set_board_friction),

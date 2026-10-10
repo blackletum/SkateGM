@@ -35,7 +35,7 @@ impl Selector {
         {
             //Runtime constants830BD400/330 are initialized by82F82588/826B0:
             //splat(-9.8), [0,-9.8,0,0]; not the launch gravity attribute.
-            let g = f32::from_bits(0x411ccccd);
+            let g = f32::from_bits(0x411ccccd) * crate::cheats::prediction_gravity_scale();
             let distance = length(sub(t.position, end));
             let square = 2. * distance * reciprocal(g);
             let root = if square == 0. {

@@ -373,6 +373,7 @@ function S.UpdateSound(key, ent, P, state, now, stale)
 			OneShot(ent, SND.clatter, 0.7)
 		end
 	end
+	if key == LocalPlayer() and S.RumbleEvents then S.RumbleEvents(A, prev, cat, now) end
 	if cat == "air" then
 		if prev ~= "air" then A.minVz, A.airAt = 0, now end
 		A.minVz = math.min(A.minVz, A.vz)

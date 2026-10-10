@@ -15,7 +15,9 @@ pub use types::*;
 pub type Vector = [f32; 4];
 pub type Frame = [Vector; 4];
 pub const STEP: f32 = f32::from_bits(0x3c88_8889);
-pub const GRAVITY: Vector = [0., f32::from_bits(0xc11c_cccd), 0., 0.];
+pub fn gravity() -> Vector {
+    [0., f32::from_bits(0xc11c_cccd) * crate::cheats::prediction_gravity_scale(), 0., 0.]
+}
 const EMPTY: Trajectory = Trajectory {
     position: [0.; 4],
     velocity: [0.; 4],

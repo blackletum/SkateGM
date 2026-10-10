@@ -55,7 +55,7 @@ impl Sliding {
         let speed = dot3(input.movement_velocity_480, uphill);
         let factor = -(slide_vs_slope.evaluate(slope) * slide_vs_speed.evaluate(speed));
         //82F82588 initializes830BD400 by splatting822F8B40 (-9.8).
-        let acceleration = clamp_length(downhill.map(|v| v * (f32::from_bits(0xc11c_cccd) * factor)), 5.0);
+        let acceleration = clamp_length(downhill.map(|v| v * (f32::from_bits(0xc11c_cccd) * crate::cheats::gravity_scale() * factor)), 5.0);
         self.velocity_528 = std::array::from_fn(|i| {
             acceleration[i].mul_add(f32::from_bits(0x3d4c_cccd), self.velocity_528[i] * 0.95)
         });

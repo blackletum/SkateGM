@@ -1,5 +1,5 @@
 //! PositionSelector82D63D40, velocity window82D64420 and edge clipping82D651E0.
-use super::{GRAVITY, Settings, UP, V, math::*};
+use super::{gravity, Settings, UP, V, math::*};
 use skate_core::animation::foot_ik::transforms::inverse_rigid;
 use skate_core::{
     air::trajectory::Trajectory,
@@ -61,7 +61,7 @@ pub(super) fn select(
         let trajectory = Trajectory {
             position: point(&inverse, com),
             velocity: [x * sign, y, 0.0, 0.0],
-            acceleration: GRAVITY,
+            acceleration: gravity(),
             duration: -1.0,
         };
         let mut p = trajectory.position_at(super::apex_time(trajectory));

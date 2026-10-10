@@ -102,6 +102,24 @@ def build_sounds(xex, data, gmod, vgmstream, aems_render=None):
     return run(xex.parent)
 
 
+def build_music(xex, data, gmod, vgmstream):
+    from tools.asset_pipeline import skate3_music
+    xex, data = Path(xex).resolve(), Path(data).resolve()
+
+    def report(text):
+        print(text, flush=True)
+
+    def run(game):
+        with tempfile.TemporaryDirectory(prefix='skategm-music-', dir=data) as work:
+            return skate3_music.build(game, gmod, vgmstream, Path(work), report)
+    if xex.suffix.lower() == '.iso':
+        import xiso
+        with tempfile.TemporaryDirectory(prefix='skategm-disc-', dir=data) as disc:
+            xiso.extract_files(xex, skate3_music.FILES, disc, lambda text: print(text, flush=True))
+            return run(Path(disc))
+    return run(xex.parent)
+
+
 def convert_game(game, out):
     missing = [path for path in REQUIRED if not (game / path).is_file()]
     if missing:

@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 BUILD = ROOT / '.build'
 VENV = BUILD / 'venv'
 PY = VENV / ('Scripts/python.exe' if sys.platform == 'win32' else 'bin/python')
-PACKAGES = ['numpy==2.5.3', 'pillow==12.3.0']
+PACKAGES = ['numpy==2.5.3', 'pillow==12.3.0', 'soundfile==0.14.0', 'cffi==2.1.1', 'pycparser==3.11']
 PYINSTALLER = 'pyinstaller==6.22.3'
 DLL = ROOT / 'gm_skategm' / 'prebuilt' / 'gmcl_skategm_win64.dll'
 PREBUILT = ROOT / 'gm_skategm' / 'prebuilt'
@@ -94,6 +94,10 @@ def main():
     for name in EXTRA_LICENSES:
         shutil.copy2(PREBUILT / name, licenses / name)
     shutil.copy2(VGMSTREAM / 'COPYING', licenses / 'vgmstream-COPYING.txt')
+    site = Path(subprocess.run([str(PY), '-c', 'import soundfile, _soundfile_data, os; print(os.path.dirname(soundfile.__file__))'],
+                               check=True, capture_output=True, text=True).stdout.strip())
+    shutil.copy2(site / '_soundfile_data' / 'COPYING', licenses / 'libsndfile-COPYING.txt')
+    shutil.copy2(next(site.glob('soundfile-*.dist-info')) / 'LICENSE', licenses / 'python-soundfile-LICENSE.txt')
     out = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / 'release'
     version_file(work / 'version.txt')
     from PIL import Image
@@ -101,7 +105,7 @@ def main():
     run(PY, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile', '--windowed', '--noupx', '--name', NAME,
         '--version-file', work / 'version.txt',
         '--paths', ROOT / 'exporter',
-        '--hidden-import', 'numpy', '--hidden-import', 'PIL.Image', '--hidden-import', 'convert', '--hidden-import', 'xiso', '--collect-submodules', 'mapgen',
+        '--hidden-import', 'numpy', '--hidden-import', 'PIL.Image', '--hidden-import', 'convert', '--hidden-import', 'xiso', '--hidden-import', 'soundfile', '--collect-submodules', 'mapgen',
         '--add-binary', f'{refpack}{SEP}tools/asset_pipeline',
         '--add-data', f'{ROOT / "exporter" / "tools"}{SEP}tools',
         '--add-data', f'{ROOT / "addon" / "skategm"}{SEP}payload/addon',
@@ -114,7 +118,7 @@ def main():
         '--add-data', f'{ROOT / "VERSION"}{SEP}.',
         '--icon', work / 'icon.ico',
         '--exclude-module', 'bpy', '--exclude-module', 'mathutils',
-        '--copy-metadata', 'numpy', '--copy-metadata', 'Pillow',
+        '--copy-metadata', 'numpy', '--copy-metadata', 'Pillow', '--copy-metadata', 'soundfile',
         '--distpath', out, '--workpath', work / 'build', '--specpath', work,
         ROOT / 'installer' / 'setup_skategm.py')
     print('built', out / (NAME + '.exe'))

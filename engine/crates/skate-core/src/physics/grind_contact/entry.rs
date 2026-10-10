@@ -57,7 +57,7 @@ impl Engagement {
         if !matches!(input.category, 100 | 200) { return out; }
         if dot3(input.up, input.direction).abs() > 0.5 {
             out.valid = false;
-            if input.category == 200 { out.wipeout_reasons.push(13); }
+            if input.category == 200 && !crate::cheats::vetoes(13) { out.wipeout_reasons.push(13); }
             return out;
         }
         out.flags |= 0x4000_0000;
@@ -77,6 +77,7 @@ impl Engagement {
             && (input.surface_kind == 0 || dot3(input.board_velocity, input.high_side) > 0.) {
             out.wipeout_reasons.push(14);
         }
+        out.wipeout_reasons.retain(|&r| !crate::cheats::vetoes(r));
         if !out.wipeout_reasons.is_empty() { out.valid = false; }
         out
     }

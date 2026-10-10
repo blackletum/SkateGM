@@ -40,20 +40,42 @@ feed(sc({ total = 12500, line = 1800, sequence = 400, lineTime = 2, multiplier =
 local ok, err = pcall(S.HudPaint, 1920, 1080, t)
 local shown = table.concat(texts, " ")
 print("display draws:", ok and shown:find("12,500") and shown:find("1,800") and shown:find("x3") and shown:find("+400") and shown:find("KICKFLIP") and "OK" or ("<-- WRONG " .. tostring(err) .. " / " .. shown))
+texts = {}
+S.MK.active = true
+pcall(S.HudPaint, 1920, 1080, t)
+shown = table.concat(texts, " ")
+print("LB held: the trick display steps aside (the score corner stays)", shown:find("12,500") and not shown:find("1,800") and not shown:find("KICKFLIP") and "OK" or ("<-- WRONG " .. shown))
+S.MK.active = nil
 S.phase = "off" texts = {}
 S.HudPaint(1920, 1080, t)
 print("hidden when not skating:", #texts == 0 and "OK" or "<-- WRONG")
 texts = {}
 local boxes = 0
 draw.RoundedBox = function() boxes = boxes + 1 end
+draw.RoundedBoxEx = function() end
 S.phase = "on"
 S.pose = { held = true }
 S.HudPaint(1920, 1080, t)
 print("waiting for collision: nothing for the first few frames", boxes == 0 and "OK" or "<-- WRONG")
 S.HudPaint(1920, 1080, t + 0.3)
 local said = table.concat(texts, " | ")
-print("waiting for collision: a popup says so", boxes == 1 and said:find("Waiting for collision to load", 1, true) and "OK" or "<-- WRONG (" .. said .. ")")
+print("waiting for collision: a card says so, with its moving bar", boxes == 3 and said:find("Waiting for collision to load", 1, true) and "OK" or "<-- WRONG (" .. said .. ")")
 S.pose = { held = false }
 texts, boxes = {}, 0
 S.HudPaint(1920, 1080, t + 0.35)
 print("... and goes away once it's in", boxes == 0 and not table.concat(texts, " "):find("Waiting", 1, true) and "OK" or "<-- WRONG")
+
+do
+	local fills = {}
+	draw.RoundedBox = function(r, x, y, w, h, col) fills[#fills + 1] = { x = x, w = w } end
+	draw.RoundedBoxEx = function() end
+	FrameTime = function() return 1 end
+	texts = {}
+	S.waitShown = nil
+	S.PaintWait(1920, 1080, 10, 9, "Loading", "Loading the skater", false, 0.5)
+	local track, bar = fills[2], fills[3]
+	print("loading: a bar filled as far as it's got, and the step it's on", track and bar and math.abs(bar.w - track.w * 0.5) <= 1 and table.concat(texts, "|"):find("Loading the skater", 1, true) and "OK" or "<-- WRONG")
+	fills = {}
+	S.PaintWait(1920, 1080, 11, 9, "Loading", "Loading the skater", false, 0.3)
+	print("... never going backwards", fills[3] and math.abs(fills[3].w - track.w * 0.5) <= 1 and "OK" or "<-- WRONG")
+end

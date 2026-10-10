@@ -22,6 +22,7 @@ function S.MarkerUpdate(m, now, skaterPos)
 	-- the return: progress was filling and the skater jumped to the marker
 	if MK.progress and MK.progress > 0.5 and m.progress < 0.1 and pos and skaterPos and (skaterPos - pos):Length() < 80 then
 		if cvSounds:GetBool() then surface.PlaySound(MARK_SOUNDS.back) end
+		MK.arrived = now
 	end
 	MK.pos, MK.active, MK.canPlace, MK.canReturn, MK.progress = pos, m.active, m.canPlace, m.canReturn, m.progress or 0
 end
@@ -31,6 +32,9 @@ end
 -- the right
 CreateClientConVar("skategm_hud_lb", "1", true, false, "Show the LB overlay (marker and LB controls)", 0, 1)
 CreateClientConVar("skategm_hud_marker", "1", true, false, "Show the marker beacon", 0, 1)
+function S.LBMenuShown()
+	return MK.active == true and not S.inputBlocked and S.HudShows("skategm_hud_lb")
+end
 function S.MarkerPaint(w, h)
 	if S.noPad then
 		Shadowed("No controller found", "skategm_big", w / 2, h * 0.45, Color(255, 220, 120), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
@@ -42,7 +46,7 @@ function S.MarkerPaint(w, h)
 			Color(200, 220, 235), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
 	end
 	-- (input taken by a menu or the park editor: the engine never saw LB let go)
-	if not MK.active or S.inputBlocked or not S.HudShows("skategm_hud_lb") then return end
+	if not S.LBMenuShown() then return end
 	local cx, cy = w / 2, h * 0.82
 	local u = math.max(8, math.floor(h * 0.018)) -- one arm's width
 	local gap = u * 0.45 -- between an arm and its words
@@ -77,8 +81,9 @@ function S.MarkerPaint(w, h)
 		Shadowed("set marker", "skategm_cmid", cx, bottom, canPlace and on or offc, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
 	end
 	if games then
-		Shadowed("minigames", "skategm_cmid", left, cy, on, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
-		Shadowed("players", "skategm_cmid", right, cy, on, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		local invited = SKATEGM_MODES.InviteActive and SKATEGM_MODES.InviteActive()
+		Shadowed(invited and "decline invite" or "minigames", "skategm_cmid", left, cy, on, TEXT_ALIGN_RIGHT, TEXT_ALIGN_CENTER)
+		Shadowed(invited and "accept invite" or "players", "skategm_cmid", right, cy, on, TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 	end
 	-- holding up: how far the return has got, between the arm and its words
 	if canReturn and (MK.progress or 0) > 0 then
@@ -89,10 +94,77 @@ function S.MarkerPaint(w, h)
 		surface.SetDrawColor(on.r, on.g, on.b, on.a)
 		surface.DrawRect(bx, by, bw * math.Clamp(MK.progress, 0, 1), bh)
 	end
+	if S.skate3Music then S.skate3Music.PaintControls(w, h, u, on, Shadowed, keys) end
 	-- the LB combos (respawn, replays, park editor, map, settings...): a
 	-- column to the right, as they registered themselves (skategm_ui)
 	local UI = SKATEGM_UI
 	if UI and UI.ComboHints then UI.pad.Legend(UI.ComboHints(), w, h, { cx + u * 7.5, cy - u * 1.8, column = true, font = "skategm_cmid", color = on }) end
+end
+
+MK.STATIC_PATH, MK.STATIC_MAX, MK.STATIC_VOLUME = "sound/skategm/static.wav", 235, 0.6
+MK.TO_BLACK, MK.BLACK_HOLD, MK.FROM_BLACK, MK.STATIC_DROP = 0.1, 0.06, 0.35, 3
+MK.static = MK.static or 0
+
+function S.MarkerFade(now, dt)
+	local want = (MK.active and MK.canReturn and not S.markerBlockSent and (MK.progress or 0) > 0) and MK.progress or 0
+	local black = 0
+	local since = MK.arrived and now - MK.arrived
+	if since and since < MK.TO_BLACK then
+		want = 1
+		black = since / MK.TO_BLACK
+	elseif since and since < MK.TO_BLACK + MK.BLACK_HOLD then
+		black, want, MK.static = 1, 0, 0
+	elseif since and since < MK.TO_BLACK + MK.BLACK_HOLD + MK.FROM_BLACK then
+		black, want, MK.static = 1 - (since - MK.TO_BLACK - MK.BLACK_HOLD) / MK.FROM_BLACK, 0, 0
+	elseif since then
+		MK.arrived = nil
+	end
+	if want >= MK.static then MK.static = want else MK.static = math.max(want, MK.static - dt * MK.STATIC_DROP) end
+	return math.Clamp(MK.static, 0, 1), math.Clamp(black, 0, 1)
+end
+
+function S.MarkerStaticSound(k)
+	local on = k > 0.01 and cvSounds:GetBool()
+	local ch = MK.staticCh
+	if on and not MK.staticLoading and not IsValid(ch) and sound and sound.PlayFile then
+		MK.staticLoading = true
+		sound.PlayFile(MK.STATIC_PATH, "noplay noblock", function(c)
+			MK.staticLoading = false
+			if not IsValid(c) then return end
+			c:EnableLooping(true)
+			c:SetVolume(0)
+			c:Play()
+			MK.staticCh = c
+		end)
+		return
+	end
+	if IsValid(ch) then
+		if on then
+			ch:SetVolume(MK.STATIC_VOLUME * k * (L.cvVolume and L.cvVolume:GetFloat() or 1))
+		else
+			ch:Stop()
+			MK.staticCh = nil
+		end
+	end
+end
+
+local staticMat
+function S.MarkerFadePaint(w, h, now, dt)
+	local k, black = S.MarkerFade(now, dt)
+	S.MarkerStaticSound(k)
+	if k > 0 then
+		staticMat = staticMat or Material("skategm/static.png", "noclamp")
+		local cell = 3
+		local su, sv = w / (256 * cell), h / (256 * cell)
+		local u, v = math.random(), math.random()
+		surface.SetMaterial(staticMat)
+		surface.SetDrawColor(255, 255, 255, MK.STATIC_MAX * k)
+		surface.DrawTexturedRectUV(0, 0, w, h, u, v, u + su, v + sv)
+	end
+	if black > 0 then
+		surface.SetDrawColor(0, 0, 0, 255 * black)
+		surface.DrawRect(0, 0, w, h)
+	end
 end
 
 -- a glowing post where the marker is

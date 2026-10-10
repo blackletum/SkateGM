@@ -7,6 +7,7 @@
 pub mod air;
 pub mod animation;
 pub mod camera;
+pub mod cheats;
 pub mod graph;
 pub mod input;
 pub mod math;

@@ -482,6 +482,19 @@ function List.Input(stack, btn)
 	local rows = List.Rows(page)
 	page.sel = math.Clamp(page.sel or 1, 1, math.max(1, #rows))
 	local row = rows[page.sel]
+	local cols = page.grid and page.grid.cols
+	if cols and (btn == B.LEFT or btn == B.RIGHT or btn == B.UP or btn == B.DOWN) then
+		local n, sel = #rows, page.sel
+		if btn == B.LEFT then sel = math.max(1, sel - 1)
+		elseif btn == B.RIGHT then sel = math.min(n, sel + 1)
+		elseif btn == B.UP then
+			if sel - cols >= 1 then sel = sel - cols end
+		elseif math.ceil(sel / cols) < math.ceil(n / cols) then
+			sel = math.min(n, sel + cols)
+		end
+		page.sel = math.max(1, sel)
+		return
+	end
 	if btn == B.UP then page.sel = List.Step(rows, page.sel, -1)
 	elseif btn == B.DOWN then page.sel = List.Step(rows, page.sel, 1)
 	elseif (btn == B.LEFT or btn == B.RIGHT) and row and row.change and not row.disabled then
@@ -503,7 +516,7 @@ end
 
 -- what each button does on this row, for the hints
 function List.Hints(stack, row, page)
-	local out = { { keys = { "UP", "DOWN" }, text = "Choose" } }
+	local out = { { keys = page and page.grid and { "UP", "DOWN", "LEFT", "RIGHT" } or { "UP", "DOWN" }, text = "Choose" } }
 	if row and row.change and not row.disabled then out[#out + 1] = { keys = { "LEFT", "RIGHT" }, text = "Change" } end
 	if row and (row.page or row.run or row.press) then
 		local aText = row.aText
@@ -571,11 +584,63 @@ function List.Scroll(x, y, pw, rowH, h, first, visible, count, sel)
 	end
 end
 
+function List.GridLayout(page, count, w, h, opts)
+	local g = page.grid
+	local x, y, pw = w * (opts.x or 0.05), h * (opts.y or 0.16), w * (opts.width or 0.38)
+	local gap = math.floor(h * 0.008)
+	local size = math.floor((pw - gap * (g.cols - 1)) / g.cols)
+	local lines = math.max(1, math.floor((h * 0.66) / (size + gap)))
+	local total = math.ceil(count / g.cols)
+	local line = math.floor(((page.sel or 1) - 1) / g.cols)
+	local first = math.Clamp(line - math.floor(lines / 2), 0, math.max(0, total - lines))
+	return { x = x, y = y, pw = pw, gap = gap, size = size, lines = lines, first = first, total = total }
+end
+
+function List.PaintGrid(page, rows, w, h, opts)
+	local L = List.GridLayout(page, #rows, w, h, opts)
+	local cols = page.grid.cols
+	draw.RoundedBox(10, L.x - 16, L.y - h * 0.065, L.pw + 32, h * 0.085 + L.lines * (L.size + L.gap), PANEL)
+	local sel = rows[page.sel]
+	local title = page.title or ""
+	if sel and sel.label then title = title .. ": " .. sel.label end
+	PAD.Text(List.Fit(title, "skategm_ui_title", L.pw), "skategm_ui_title", L.x, L.y - h * 0.055)
+	for line = L.first, math.min(L.total, L.first + L.lines) - 1 do
+		for c = 1, cols do
+			local i = line * cols + c
+			local row = rows[i]
+			if row then
+				local cx = L.x + (c - 1) * (L.size + L.gap)
+				local cy = L.y + (line - L.first) * (L.size + L.gap)
+				if i == page.sel then draw.RoundedBox(8, cx - 4, cy - 4, L.size + 8, L.size + 8, BLUE) end
+				page.grid.cell(row, cx, cy, L.size, i == page.sel)
+				if row.mark and row.mark() then draw.RoundedBox(4, cx + L.size - 14, cy + 6, 8, 8, BLUE) end
+			end
+		end
+	end
+	if L.total > L.lines then
+		local top, height = L.y - 3, L.lines * (L.size + L.gap)
+		local bx = L.x + L.pw + 10
+		draw.RoundedBox(3, bx, top, 5, height, Color(255, 255, 255, 30))
+		local thumb = math.max(L.size * 0.6, height * L.lines / L.total)
+		draw.RoundedBox(3, bx, top + (height - thumb) * (L.first / math.max(1, L.total - L.lines)), 5, thumb, BLUE)
+		PAD.Text(string.format("%d / %d", page.sel, #rows), "skategm_ui_sub", L.x + L.pw, L.y - h * 0.05, GREY, TEXT_ALIGN_RIGHT)
+	end
+	return sel
+end
+
 function List.Paint(stack, w, h, opts)
 	opts = opts or {}
 	local page = stack[#stack]
 	if not page then return end
 	PAD.Fonts()
+	if page.grid then
+		local rows = List.Rows(page)
+		page.sel = math.Clamp(page.sel or 1, 1, math.max(1, #rows))
+		local sel = List.PaintGrid(page, rows, w, h, opts)
+		if page.preview then page.preview(sel, w * 0.5, h * 0.12, w * 0.42, h * 0.68) end
+		PAD.Legend(List.Hints(stack, sel, page), w, h, "bottom")
+		return
+	end
 	local rows = List.Rows(page)
 	local x, y, pw, rowH = w * (opts.x or 0.05), h * (opts.y or 0.16), w * (opts.width or 0.38), h * 0.052
 	local visible = math.min(#rows, opts.visible or List.VISIBLE)

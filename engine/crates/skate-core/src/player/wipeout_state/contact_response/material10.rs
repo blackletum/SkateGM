@@ -60,7 +60,7 @@ impl Response {
                 apply_velocity_delta(body, scale(sub(self.target_velocity, velocity), 1.0));
                 //Global830BD330 initializer82F826B0 loads -9.8 from822F8B40.
                 self.target_velocity = madd(
-                    [0.0, f32::from_bits(0xc11c_cccd), 0.0, 0.0],
+                    [0.0, f32::from_bits(0xc11c_cccd) * crate::cheats::gravity_scale(), 0.0, 0.0],
                     STEP,
                     self.target_velocity,
                 );

@@ -47,6 +47,17 @@ pub(super) fn advance(
     let current = skater.player_state.current();
     let requested = skater.player_state.selector.calculate(current, &input);
     skater.player_state.requested_state = requested;
+    static DEBUG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *DEBUG.get_or_init(|| std::env::var_os("SK8_WIPE_DEBUG").is_some()) {
+        let r = &skater.wipeout.state.reasons;
+        let set: Vec<usize> = (0..r.len()).filter(|&i| r[i]).collect();
+        if !set.is_empty() || (requested != current && format!("{requested:?}").contains("Wipeout")) {
+            eprintln!(
+                "WIPE_DEBUG tick {} {:?} -> {:?} reasons {:?} 2468 {:#x} 2480 {:#x}",
+                physics.ticks, current, requested, set, input.processed.flags_2468, input.processed.flags_2480
+            );
+        }
+    }
     if requested != current {
         //82DB5FF4 restores the actual counter also used by ground-history.
         skater.player_input.player.ground_history_frames_1304 = 100;

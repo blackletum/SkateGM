@@ -50,7 +50,7 @@ pub fn prepared_jump_velocity(request: PrepareJumpRequest) -> RawVector {
         [0.0; 4]
     };
     let down_component = f32::from_bits(direction[1].to_bits() ^ 0x8000_0000);
-    let acceleration = down_component * f32::from_bits(0x411c_cccd); //822F8BD4
+    let acceleration = down_component * f32::from_bits(0x411c_cccd) * crate::cheats::gravity_scale(); //822F8BD4
     std::array::from_fn(|i| {
         (direction[i] * acceleration)
             .mul_add(f32::from_bits(0x3c88_8889), previous[i]) //820849C8

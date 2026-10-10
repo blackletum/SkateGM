@@ -99,19 +99,6 @@ local function Fonts()
 	surface.CreateFont("skategm_gm_text", { font = "Roboto", size = math.max(15, math.floor(h * 0.022)), weight = 600 })
 end
 
-local logo
--- the SkateGM logo, centred, its bottom at y
-local function Logo(bottom)
-	logo = logo or Material("skategm/logo.png", "smooth")
-	if not logo or logo:IsError() then return end
-	local lh = ScrH() * 0.16
-	local lw = lh * 682 / 350
-	surface.SetDrawColor(255, 255, 255, 255)
-	surface.SetMaterial(logo)
-	surface.DrawTexturedRect((ScrW() - lw) / 2, bottom - lh, lw, lh)
-end
-C.Logo = Logo
-
 function GM:HUDPaint()
 	BaseClass.HUDPaint(self)
 	local why = C.Failed()
@@ -119,12 +106,20 @@ function GM:HUDPaint()
 		-- waiting for Skater mode to come on (while it loads, Skater mode says
 		-- so itself)
 		local a = API()
-		if a and not a.IsSkating() then Logo(ScrH() * 0.4) end
 		if a and not a.IsSkating() and not a.IsLoading() then
-			Fonts()
-			local text = "Getting you into Skater mode..."
-			draw.SimpleText(text, "skategm_gm_title", ScrW() / 2 + 2, ScrH() * 0.42 + 2, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
-			draw.SimpleText(text, "skategm_gm_title", ScrW() / 2, ScrH() * 0.42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+			local now = RealTime()
+			C.waitSince = C.waitSince or now
+			local S = SkateGM
+			if S and S.PaintWait then
+				S.PaintWait(ScrW(), ScrH(), now, C.waitSince, "Getting you into Skater mode...", nil, true)
+			else
+				Fonts()
+				local text = "Getting you into Skater mode..."
+				draw.SimpleText(text, "skategm_gm_title", ScrW() / 2 + 2, ScrH() * 0.42 + 2, Color(0, 0, 0, 180), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+				draw.SimpleText(text, "skategm_gm_title", ScrW() / 2, ScrH() * 0.42, color_white, TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
+			end
+		else
+			C.waitSince = nil
 		end
 		return
 	end
@@ -132,7 +127,6 @@ function GM:HUDPaint()
 	local w, h = ScrW(), ScrH()
 	local pw, ph = w * 0.56, h * 0.26
 	local x, y = (w - pw) / 2, h * 0.32
-	Logo(y - h * 0.02)
 	draw.RoundedBox(12, x, y, pw, ph, Color(0, 0, 0, 215))
 	draw.SimpleText("Couldn't put you into Skater mode", "skategm_gm_title", w / 2, y + h * 0.02, Color(255, 110, 90), TEXT_ALIGN_CENTER, TEXT_ALIGN_TOP)
 	-- the reason, wrapped

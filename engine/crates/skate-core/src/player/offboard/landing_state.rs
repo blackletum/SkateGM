@@ -1,6 +1,6 @@
 //! State503, original TU3 82D4D418..82D4E100 (SHA431b8eba...0395a).
 //! Manager owns the trajectory; this state owns alignment and landing decisions.
-use super::{hippy_jump, landing_deck::{Manager, Trajectory, UpdateOutput, GRAVITY, STEP}};
+use super::{hippy_jump, landing_deck::{Manager, Trajectory, UpdateOutput, gravity, STEP}};
 use crate::player::wipeout_state::{math::wrap_angle, orientation::projected_angle};
 use crate::physics::board_motion_output::inverse_length_squared;
 pub type Vector = [f32;4];
@@ -63,7 +63,7 @@ impl State {
                 })
             } else { input.com_velocity };
             manager.trajectory_32 = Trajectory {
-                position: input.com_position, velocity, acceleration: GRAVITY, duration: -1.,
+                position: input.com_position, velocity, acceleration: gravity(), duration: -1.,
             };
             manager.elapsed_160 = 0.;
             manager.trajectory_valid_164 = true;
@@ -132,7 +132,7 @@ impl State {
         let feet = (toe_y[0]+toe_y[1])*0.5-0.15000001;
         let velocity = com_velocity_y-board_velocity_y;
         let displacement = board_y-feet;
-        let gravity = if wheel_contacts != 0 {-9.8} else {-4.9};
+        let gravity = if wheel_contacts != 0 {-9.8} else {-4.9} * crate::cheats::prediction_gravity_scale();
         let discriminant = velocity*velocity+(displacement*gravity)*2.;
         if discriminant > 0. {
             let root = discriminant*inverse_length_squared(discriminant,2);

@@ -22,7 +22,7 @@ pub(crate) fn reset_processed(input: &mut ProcessedPhysicsInput) {
         state_variant_index_2528: 1,
         grind_words_2532_2536: [u32::MAX, 0],
         timestep_2604: f32::from_bits(0x3c88_8889),
-        gravity_2648: f32::from_bits(0xc11c_cccd),
+        gravity_2648: f32::from_bits(0xc11c_cccd) * skate_core::cheats::gravity_scale(),
         actor_query_2952: u32::MAX,
         ..ProcessedPhysicsInput::default()
     };

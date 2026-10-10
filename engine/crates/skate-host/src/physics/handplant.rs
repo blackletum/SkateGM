@@ -11,7 +11,9 @@ use settings::Settings;
 use skate_core::{air::trajectory::Trajectory, physics::skeleton_animation_record::IDENTITY};
 type V = [f32; 4];
 const UP: V = [0.0, 1.0, 0.0, 0.0];
-const GRAVITY: V = [0.0, f32::from_bits(0xc11ccccd), 0.0, 0.0];
+pub(super) fn gravity() -> V {
+    [0.0, f32::from_bits(0xc11ccccd) * skate_core::cheats::prediction_gravity_scale(), 0.0, 0.0]
+}
 const EMPTY: Trajectory = Trajectory {
     position: [0.0; 4],
     velocity: [0.0; 4],
@@ -264,7 +266,7 @@ pub(super) fn enter(physics: &mut GamePhysics, skater: &mut SkaterRuntime) -> Re
     h.entry = Trajectory {
         position: p.vectors_544_560_592_608[2].map(f32::from_bits),
         velocity: p.vectors_544_560_592_608[3].map(f32::from_bits),
-        acceleration: GRAVITY,
+        acceleration: gravity(),
         duration: -1.0,
     };
     h.warped = 0.0;

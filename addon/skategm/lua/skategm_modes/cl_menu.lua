@@ -730,9 +730,8 @@ function MENU.ObjectLegend(fc)
 end
 
 -- LB + D-pad left / right open the menu, LB + X respawns, LB + RB replays
-UI.Combo(B.LEFT, { open = function() MENU.Open("main") end, whileWatching = true })
-UI.Combo(B.RT, { open = function() M.AcceptInvite() end, allowed = function() return M.InviteActive() end, label = "join invite" })
-UI.Combo(B.RIGHT, { open = function() MENU.Open("players") end })
+UI.Combo(B.LEFT, { open = function() if M.InviteActive() then M.DeclineInvite() else MENU.Open("main") end end, whileWatching = true })
+UI.Combo(B.RIGHT, { open = function() if M.InviteActive() then M.AcceptInvite() else MENU.Open("players") end end })
 UI.Combo(B.X, { open = function() local a = API() if a and a.Respawn then a.Respawn() end end, label = "respawn" })
 UI.Combo(B.RB, { open = function() MENU.Open("replays") end, allowed = function() return MENU.SCREENS ~= nil and MENU.SCREENS.replays ~= nil end, label = "replay" })
 

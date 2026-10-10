@@ -106,6 +106,7 @@ mod sdl {
         axis: unsafe extern "C" fn(Ctrl, c_int) -> i16,
         name: unsafe extern "C" fn(Ctrl) -> *const c_char,
         kind: Option<unsafe extern "C" fn(Ctrl) -> c_int>,
+        rumble: Option<unsafe extern "C" fn(Ctrl, u16, u16, u32) -> c_int>,
         joystick_name: unsafe extern "C" fn(c_int) -> *const c_char,
     }
 
@@ -175,6 +176,10 @@ mod sdl {
                     let p = unsafe { GetProcAddress(lib, c"SDL_GameControllerGetType".as_ptr()) };
                     (!p.is_null()).then(|| unsafe { std::mem::transmute::<*mut c_void, unsafe extern "C" fn(Ctrl) -> c_int>(p) })
                 },
+                rumble: {
+                    let p = unsafe { GetProcAddress(lib, c"SDL_GameControllerRumble".as_ptr()) };
+                    (!p.is_null()).then(|| unsafe { std::mem::transmute::<*mut c_void, unsafe extern "C" fn(Ctrl, u16, u16, u32) -> c_int>(p) })
+                },
             };
             for (k, v) in [
                 ("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1"),
@@ -208,11 +213,23 @@ mod sdl {
             Ok(Sdl { api, ctrl: std::ptr::null_mut(), number: 0, last: State::default(), name: String::new(), kind: "xbox", others: Vec::new() })
         }
 
+        pub fn rumble(&mut self, low: u16, high: u16, ms: u32) -> bool {
+            match self.api.rumble {
+                Some(f) if !self.ctrl.is_null() => {
+                    let on = low > 0 || high > 0;
+                    super::watch_sdl(on.then_some((f as usize, self.ctrl as usize)));
+                    unsafe { f(self.ctrl, low, high, ms) == 0 }
+                }
+                _ => false,
+            }
+        }
+
         pub fn read(&mut self) -> Option<(u32, State)> {
             let a = &self.api;
             unsafe {
                 (a.update)();
                 if !self.ctrl.is_null() && (a.attached)(self.ctrl) == 0 {
+                    super::watch_sdl(None);
                     (a.close)(self.ctrl);
                     self.ctrl = std::ptr::null_mut();
                     self.name.clear();
@@ -248,6 +265,93 @@ mod sdl {
     }
 }
 
+#[cfg(windows)]
+mod xinput {
+    #[repr(C)]
+    struct Vibration {
+        left: u16,
+        right: u16,
+    }
+    #[link(name = "xinput")]
+    extern "system" {
+        fn XInputSetState(index: u32, vibration: *mut Vibration) -> u32;
+    }
+    pub fn set(slot: usize, low: u16, high: u16) {
+        let mut v = Vibration { left: low, right: high };
+        unsafe { XInputSetState(slot as u32, &mut v) };
+    }
+}
+
+pub fn motor(v: f32) -> u16 {
+    (v.clamp(0.0, 1.0) * 65535.0).round() as u16
+}
+
+#[derive(Clone, Copy, Default)]
+struct Live {
+    xinput: Option<usize>,
+    sdl: Option<(usize, usize)>,
+}
+static LIVE: std::sync::Mutex<Live> = std::sync::Mutex::new(Live { xinput: None, sdl: None });
+static WATCHDOG: std::sync::Once = std::sync::Once::new();
+
+#[allow(dead_code)]
+fn watch_sdl(sdl: Option<(usize, usize)>) {
+    LIVE.lock().unwrap_or_else(|e| e.into_inner()).sdl = sdl;
+    if sdl.is_some() {
+        start_watchdog();
+    }
+}
+
+#[allow(dead_code)]
+fn watch_xinput(slot: Option<usize>) {
+    LIVE.lock().unwrap_or_else(|e| e.into_inner()).xinput = slot;
+    if slot.is_some() {
+        start_watchdog();
+    }
+}
+
+fn start_watchdog() {
+    WATCHDOG.call_once(|| {
+        let _ = std::thread::Builder::new().name("skategm rumble".into()).spawn(|| loop {
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            let until = crate::engine::RUMBLE.lock().unwrap_or_else(|e| e.into_inner()).until;
+            if until.is_some_and(|u| u > std::time::Instant::now()) {
+                continue;
+            }
+            let live = std::mem::take(&mut *LIVE.lock().unwrap_or_else(|e| e.into_inner()));
+            stop_live(live);
+        });
+    });
+}
+
+#[allow(unused_variables)]
+fn stop_live(live: Live) {
+    #[cfg(windows)]
+    {
+        if let Some(slot) = live.xinput {
+            xinput::set(slot, 0, 0);
+        }
+        if let Some((f, ctrl)) = live.sdl {
+            let f: unsafe extern "C" fn(*mut std::ffi::c_void, u16, u16, u32) -> std::ffi::c_int = unsafe { std::mem::transmute(f) };
+            unsafe { f(ctrl as *mut std::ffi::c_void, 0, 0, 0) };
+        }
+    }
+}
+
+pub fn stop_rumble() {
+    crate::engine::set_rumble(0.0, 0.0, 0.0);
+    #[cfg(windows)]
+    for slot in 0..4 {
+        xinput::set(slot, 0, 0);
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Device {
+    XInput(usize),
+    Sdl,
+}
+
 #[derive(Default)]
 pub struct Pads {
     chooser: Chooser,
@@ -255,10 +359,58 @@ pub struct Pads {
     sdl: Option<Result<sdl::Sdl, String>>,
     pub name: String,
     pub kind: &'static str,
+    rumbled: Option<(u64, bool, Option<Device>)>,
+    rumbling: Option<Device>,
 }
 
 impl Pads {
     pub fn pick(&mut self, numbers: [Option<u32>; 4]) -> (Option<usize>, Option<(u32, State)>) {
+        let picked = self.pick_pad(numbers);
+        let device = match picked {
+            (Some(i), _) => Some(Device::XInput(i)),
+            (None, Some(_)) => Some(Device::Sdl),
+            _ => None,
+        };
+        self.apply_rumble(device);
+        picked
+    }
+
+    fn apply_rumble(&mut self, device: Option<Device>) {
+        let r = *crate::engine::RUMBLE.lock().unwrap_or_else(|e| e.into_inner());
+        let now = std::time::Instant::now();
+        let left = r.until.filter(|u| *u > now).map(|u| u - now);
+        let key = (r.seq, left.is_some(), device);
+        if self.rumbled == Some(key) {
+            return;
+        }
+        self.rumbled = Some(key);
+        let (low, high) = if left.is_some() { (motor(r.low), motor(r.high)) } else { (0, 0) };
+        if self.rumbling.is_some() && self.rumbling != device {
+            self.drive(self.rumbling, 0, 0, 0);
+        }
+        let ms = left.map_or(0, |d| d.as_millis().min(5000) as u32);
+        self.drive(device, low, high, ms);
+        self.rumbling = if low > 0 || high > 0 { device } else { None };
+    }
+
+    #[allow(unused_variables)]
+    fn drive(&mut self, device: Option<Device>, low: u16, high: u16, ms: u32) {
+        #[cfg(windows)]
+        match device {
+            Some(Device::XInput(i)) => {
+                watch_xinput((low > 0 || high > 0).then_some(i));
+                xinput::set(i, low, high)
+            }
+            Some(Device::Sdl) => {
+                if let Some(Ok(s)) = self.sdl.as_mut() {
+                    s.rumble(low, high, ms);
+                }
+            }
+            None => {}
+        }
+    }
+
+    fn pick_pad(&mut self, numbers: [Option<u32>; 4]) -> (Option<usize>, Option<(u32, State)>) {
         let numbers = if crate::cleanup::on("sdlonly") { [None; 4] } else { numbers };
         let slot = self.chooser.choose(numbers);
         if let Some(i) = slot {
@@ -318,6 +470,54 @@ mod tests {
     #[test]
     fn pad_types() {
         assert_eq!([kind(4), kind(7), kind(3), kind(5), kind(1), kind(0)], ["playstation", "playstation", "playstation", "nintendo", "xbox", "xbox"]);
+    }
+
+    #[test]
+    fn the_watchdog_lets_go_once_the_rumble_runs_out() {
+        crate::engine::set_rumble(0.5, 0.5, 0.05);
+        watch_xinput(Some(3));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(LIVE.lock().unwrap().xinput.is_none());
+        crate::engine::set_rumble(0.0, 0.0, 0.0);
+    }
+
+    #[test]
+    fn rumble_follows_the_requests_and_the_pad() {
+        assert_eq!(motor(1.0), 65535);
+        assert_eq!(motor(-2.0), 0);
+        let mut pads = Pads::default();
+        crate::engine::set_rumble(0.5, 0.25, 1.0);
+        pads.apply_rumble(Some(Device::XInput(1)));
+        assert_eq!(pads.rumbling, Some(Device::XInput(1)));
+        pads.apply_rumble(Some(Device::Sdl));
+        assert_eq!(pads.rumbling, Some(Device::Sdl));
+        crate::engine::set_rumble(0.0, 0.0, 0.0);
+        pads.apply_rumble(Some(Device::Sdl));
+        assert_eq!(pads.rumbling, None);
+        crate::engine::set_rumble(1.0, 1.0, 0.0);
+        pads.apply_rumble(Some(Device::Sdl));
+        assert_eq!(pads.rumbling, None);
+        crate::engine::set_rumble(f32::NAN, 2.0, 0.01);
+        let r = *crate::engine::RUMBLE.lock().unwrap();
+        assert_eq!((r.low, r.high), (0.0, 1.0));
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        pads.apply_rumble(Some(Device::Sdl));
+        assert_eq!(pads.rumbling, None);
+    }
+
+    #[test]
+    fn lb_keeps_the_right_stick_until_it_comes_back() {
+        use crate::engine::{right_stick_held, LB_RIGHT_STICK};
+        use std::sync::atomic::Ordering::Relaxed;
+        LB_RIGHT_STICK.store(false, Relaxed);
+        assert!(!right_stick_held(true, [30000, 0], false, false));
+        LB_RIGHT_STICK.store(true, Relaxed);
+        assert!(right_stick_held(true, [0, 0], false, false));
+        assert!(right_stick_held(false, [30000, 0], false, true));
+        assert!(right_stick_held(false, [0, 0], true, true));
+        assert!(!right_stick_held(false, [0, 0], false, true));
+        assert!(!right_stick_held(false, [30000, 0], false, false));
+        LB_RIGHT_STICK.store(false, Relaxed);
     }
 
     #[test]

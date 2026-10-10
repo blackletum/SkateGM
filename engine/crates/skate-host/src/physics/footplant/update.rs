@@ -90,7 +90,7 @@ impl Footplant {
             ),
             velocity: input.trajectory.velocity,
             //830BD330 initializer82F826B0 uses822F8B40, independently read original bytes.
-            acceleration: [0.0, f32::from_bits(0xc11ccccd), 0.0, 0.0],
+            acceleration: [0.0, f32::from_bits(0xc11ccccd) * skate_core::cheats::gravity_scale(), 0.0, 0.0],
             duration: -1.0,
         };
     }

@@ -7,6 +7,7 @@
 | `engine/crates/skate-audio/`, `engine/crates/skate-audio-fma/` | [SK8-ENGINE/skate-3-rust-engine](https://github.com/SK8-ENGINE/skate-3-rust-engine) `crates/`, commit `b3c96793` (Skate 3's sound engine; the installer's `aems_render` renders the foot-brake loops with it) | GPL-3.0 (`LICENSE`) |
 | `exporter/tools/asset_pipeline/audio_formats.py`, `audio_export.py` | [SK8-ENGINE/skate-3-rust-engine](https://github.com/SK8-ENGINE/skate-3-rust-engine) `tools/asset_pipeline/`, commit `b3c96793` | GPL-3.0 (`LICENSE`) |
 | `vgmstream` (the installer; fetched by `tools/fetch_vgmstream.py`) | [vgmstream](https://github.com/vgmstream/vgmstream) r2117, decodes Skate 3's sounds on the player's PC | ISC-style (`vgmstream-COPYING.txt`) |
+| `soundfile` and its `libsndfile` (the installer; pip package, pinned in `tools/build_installer.py`) | [python-soundfile](https://github.com/bastibe/python-soundfile) 0.14.0 with [libsndfile](https://github.com/libsndfile/libsndfile) 1.2.2, encodes Skate 3's music as Ogg Vorbis on the player's PC | BSD-3-Clause (`python-soundfile-LICENSE.txt`); libsndfile LGPL-2.1 (`libsndfile-COPYING.txt`) |
 | `exporter/tools/vendor/utt/` | UTT, duckyinnit | MIT (`exporter/tools/vendor/utt/LICENSE`) |
 | `exporter/tools/vendor/university/`, `exporter/tools/owned_game/` | Skate 3 Custom Engine Layer contributors | MIT (`exporter/tools/vendor/university/LICENSE-PROJECT.md`; `owned_game/NOTICE.md`) |
 | `exporter/tools/vendor/skate3_ui/` | | MIT (`exporter/tools/vendor/skate3_ui/LICENSE`) |

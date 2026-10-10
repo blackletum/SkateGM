@@ -116,6 +116,7 @@ local function ApplyTuning()
 	if skategm.SetSpeedLimit then skategm.SetSpeedLimit(cvSpeedLimit:GetFloat()) end
 	if skategm.SetAirDismountBlock then skategm.SetAirDismountBlock(cvBlockAirY:GetBool() and 1 or 0) end
 	ApplyCameraShake()
+	if SkateGM and SkateGM.ApplyCheats then SkateGM.ApplyCheats() end
 end
 if cvars and cvars.AddChangeCallback then
 	cvars.AddChangeCallback("skategm_speed_limit", function() if skategm and skategm.SetSpeedLimit then skategm.SetSpeedLimit(cvSpeedLimit:GetFloat()) end end, "skategm_speed")
@@ -135,6 +136,29 @@ local S = {
 	remote = {},     -- other skaters: player -> { snaps = {...}, last = time }
 }
 SkateGM = S
+local cvNoBail = CreateClientConVar("skategm_cheat_nobail", "0", false, false, "Single player: 1 = never bail", 0, 1)
+local cvNoFall = CreateClientConVar("skategm_cheat_nofall", "0", false, false, "Single player: 1 = no bails from landing too hard", 0, 1)
+local cvGravity = CreateClientConVar("skategm_cheat_gravity", "1", false, false, "Single player: gravity multiplier (1 = normal)", 0, 8)
+S.CHEAT_DEFAULTS = { skategm_cheat_nobail = "0", skategm_cheat_nofall = "0", skategm_cheat_gravity = "1" }
+function S.ResetCheats()
+	for name, default in pairs(S.CHEAT_DEFAULTS) do
+		local cv = GetConVar and GetConVar(name)
+		if cv and cv:GetString() ~= default then RunConsoleCommand(name, default) end
+	end
+	if skategm and skategm.SetCheats then skategm.SetCheats(0, 0, 1) end
+end
+function S.CheatsAllowed() return game ~= nil and game.SinglePlayer ~= nil and game.SinglePlayer() == true end
+function S.ApplyCheats()
+	if not (skategm and skategm.SetCheats) then return end
+	if not S.CheatsAllowed() then skategm.SetCheats(0, 0, 1) return end
+	skategm.SetCheats(cvNoBail:GetBool() and 1 or 0, cvNoFall:GetBool() and 1 or 0, math.Clamp(cvGravity:GetFloat(), 0, 8))
+end
+if cvars and cvars.AddChangeCallback then
+	for _, name in ipairs({ "skategm_cheat_nobail", "skategm_cheat_nofall", "skategm_cheat_gravity" }) do
+		cvars.AddChangeCallback(name, function() S.ApplyCheats() end, "skategm_cheats")
+	end
+end
+S.ResetCheats()
 S.L = {}
 S.passSeen, S.passNext = {}, 0
 S.ApplyTuning = ApplyTuning
@@ -1393,7 +1417,8 @@ end
 
 function S.RocketThink(p, now, dt)
 	local forced = S.RocketForced(LocalPlayer())
-	local held = forced or (p ~= nil and bit.band(bit.bor(p.padButtons or 0, S.keyboardButtons or 0), BTN_RS) ~= 0)
+	local lb = p ~= nil and bit.band(bit.bor(p.padButtons or 0, S.keyboardButtons or 0), 0x0100) ~= 0
+	local held = forced or (p ~= nil and not lb and bit.band(bit.bor(p.padButtons or 0, S.keyboardButtons or 0), BTN_RS) ~= 0)
 	local on = (cvRocket:GetBool() or S.RocketOn(LocalPlayer())) and S.RocketAllowed(LocalPlayer()) and S.phase == "on" and p ~= nil and not S.frozen
 		and held and OnBoard(p.state)
 	on = S.RocketFuelThink(on and true or false, held, now, dt)
@@ -1544,6 +1569,7 @@ hook.Add("Think", "skategm", function()
 		return
 	end
 	if S.phase == "loading" then
+		S.loadProgress, S.loadStage = p.loadProgress, p.loadStage
 		if p.status == "ready" or p.status == "active" then
 			skategm.DefineModel("skategm/player", PlayerHull())
 			if S.WaterPlateHull then skategm.DefineModel(S.WATER_PLATE, S.WaterPlateHull(), 1) end
@@ -1713,6 +1739,27 @@ local function CopyLook(e, ply)
 	end
 end
 
+-- rig: bone indices for retargeting (parents are read at posing time)
+function S.Rig(e)
+	local R = { parent = {}, swing = {} }
+	R.pelvis = e:LookupBone("ValveBiped.Bip01_Pelvis")
+	R.spine = e:LookupBone("ValveBiped.Bip01_Spine")
+	R.rthigh = e:LookupBone("ValveBiped.Bip01_R_Thigh")
+	R.lthigh = e:LookupBone("ValveBiped.Bip01_L_Thigh")
+	for gname, rule in pairs(SWING) do
+		local gi, gc = e:LookupBone(gname), e:LookupBone(rule[3])
+		if gi and gc then R.swing[gi] = { a = rule[1], b = rule[2], child = gc } end
+	end
+	if not (R.pelvis and R.spine and R.rthigh and R.lthigh) then return false end
+	e.Sk8Rig = R
+	e:AddCallback("BuildBonePositions", function(ent)
+		S.cbCount = (S.cbCount or 0) + 1
+		local ok, err = pcall(Retarget, ent)
+		if not ok and not S.retargetErr then S.retargetErr = tostring(err) Say("pose error: " .. S.retargetErr, true) end
+	end)
+	return true
+end
+
 local function Skater(ply)
 	local mdl = ply:GetModel()
 	local e = models[ply]
@@ -1741,24 +1788,7 @@ local function Skater(ply)
 		seq=e:LookupSequence(name) if seq>=0 then break end
 	end
 	e:ResetSequence(math.max(seq,0)) e:SetPlaybackRate(0) e:SetCycle(0)
-	-- rig: bone indices for retargeting (parents are read at posing time)
-	local R = { parent = {}, swing = {} }
-	R.pelvis = e:LookupBone("ValveBiped.Bip01_Pelvis")
-	R.spine = e:LookupBone("ValveBiped.Bip01_Spine")
-	R.rthigh = e:LookupBone("ValveBiped.Bip01_R_Thigh")
-	R.lthigh = e:LookupBone("ValveBiped.Bip01_L_Thigh")
-	for gname, rule in pairs(SWING) do
-		local gi, gc = e:LookupBone(gname), e:LookupBone(rule[3])
-		if gi and gc then R.swing[gi] = { a = rule[1], b = rule[2], child = gc } end
-	end
-	if R.pelvis and R.spine and R.rthigh and R.lthigh then
-		e.Sk8Rig = R
-		e:AddCallback("BuildBonePositions", function(ent)
-			S.cbCount = (S.cbCount or 0) + 1
-			local ok, err = pcall(Retarget, ent)
-			if not ok and not S.retargetErr then S.retargetErr = tostring(err) Say("pose error: " .. S.retargetErr, true) end
-		end)
-	elseif ply == LocalPlayer() then
+	if not S.Rig(e) and ply == LocalPlayer() then
 		Say("this player model has no ValveBiped skeleton; showing bones only", true)
 	end
 	models[ply] = e
@@ -1816,7 +1846,15 @@ function S.RenderSkater(e)
 				e:InvalidateBoneCache() -- make GMod rebuild (and re-pose) the bones this frame
 				e:SetupBones()
 			end
+			local blend = render.GetBlend and render.GetBlend()
+			local r, g, b
+			if render.GetColorModulation then r, g, b = render.GetColorModulation() end
+			if render.SetBlend then render.SetBlend(alpha or 1) end
+			if render.SetColorModulation then render.SetColorModulation(1, 1, 1) end
+			if render.MaterialOverride then render.MaterialOverride(nil) end
 			e:DrawModel()
+			if render.SetBlend and blend then render.SetBlend(blend) end
+			if render.SetColorModulation and r then render.SetColorModulation(r, g, b) end
 			hook.Run("SkateGMDrawSkater", e, e.Sk8Ply) -- (accessories worn on the skater)
 		end
 		if cvBones:GetBool() or not e.Sk8Rig then
@@ -2064,8 +2102,16 @@ hook.Add("PrePlayerDraw", "skategm", function(ply) if IsValid(ply) and S.IsSkati
 
 hook.Add("HUDPaint", "skategm", function()
 	if S.phase == "loading" then
-		draw.SimpleTextOutlined("Loading the skater and map collision...", "DermaLarge", ScrW() / 2, ScrH() * 0.8,
-			Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, Color(0, 0, 0))
+		local now = RealTime()
+		S.loadingSince = S.loadingSince or now
+		if S.PaintWait then
+			S.PaintWait(ScrW(), ScrH(), now, S.loadingSince, "Loading the skater and map collision...", S.loadStage, true, S.loadProgress)
+		else
+			draw.SimpleTextOutlined("Loading the skater and map collision...", "DermaLarge", ScrW() / 2, ScrH() * 0.8,
+				Color(255, 255, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER, 2, Color(0, 0, 0))
+		end
+	else
+		S.loadingSince, S.loadProgress, S.loadStage, S.waitShown = nil, nil, nil, nil
 	end
 end)
 
@@ -2083,6 +2129,8 @@ S.KeyboardUses = keyboard.Uses
 S.DataPath, S.InstalledDataPath = DataPath, InstalledDataPath
 include("skategm/cl_settings.lua")
 include("skategm/cl_nametags.lua")
+include("skategm/cl_skate3_music.lua")
+include("skategm/cl_rumble.lua")
 include("skategm/cl_replay.lua")
 include("skategm/cl_infmap.lua")
 ---------------------------------------------------------------------------

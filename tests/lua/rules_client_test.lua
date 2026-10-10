@@ -60,10 +60,14 @@ mode.state = nil lob.state = nil forced.state = nil
 M.ReceiveInvite("invitetest", "7", "Bob", 0)
 check("an invite arrives: active while that game is in its lobby", M.InviteActive() and M.invite.session == 7)
 M.AcceptInvite()
-check("LB + RT accepts: joins that very game", sent[#sent].cmd == "join" and sent[#sent].session == 7 and M.invite == nil)
+check("LB + D-pad right accepts: joins that very game", sent[#sent].cmd == "join" and sent[#sent].session == 7 and M.invite == nil)
+local joins = #sent
+M.ReceiveInvite("invitetest", "7", "Bob", 0)
+M.DeclineInvite()
+check("LB + D-pad left declines: the invite is gone, nothing joined", not M.InviteActive() and M.invite == nil and #sent == joins)
 M.ReceiveInvite("invitetest", "7", "Bob", 0)
 inv.seen[7].st.phase = "playing"
-check("the game starts: the invite is gone (and LB + RT with it)", not M.InviteActive() and M.invite == nil)
+check("the game starts: the invite is gone (and the D-pad goes back to the menus)", not M.InviteActive() and M.invite == nil)
 surface = setmetatable({ SetFont = function() end, GetTextSize = function(t) return #t * 10, 20 end }, { __index = surface })
 local long = "board through the hoop: 1 point. You through it too: none"
 local wrapped = M.Wrap(long, "f", 300)

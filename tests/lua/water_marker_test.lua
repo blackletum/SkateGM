@@ -96,6 +96,12 @@ local ki, kk, ku, ko = at["I"], at["K"], at["U"], at["O"]
 print("keyboard: I / K / U / O written on the D-pad's arms", ki and kk and ku and ko and ki.x == cx and ki.y < cy and kk.x == cx and kk.y > cy
 	and ku.x < cx and ku.y == cy and ko.x > cx and ko.y == cy and "OK" or ("<-- WRONG " .. table.concat(texts, "|")))
 texts, at = {}, {}
+texts, at = {}, {}
+SKATEGM_MODES = { menu = {}, InviteActive = function() return true end }
+S.MarkerPaint(1920, 1080)
+SKATEGM_MODES = hadModes
+print("an invite waiting: LB + D-pad left / right say decline / accept", at["decline invite"] and at["accept invite"] and not at["minigames"] and not at["players"]
+	and at["decline invite"].x < cx and at["accept invite"].x > cx and "OK" or "<-- WRONG")
 -- the combos list themselves (each screen registers its own, with a label)
 local UI = SKATEGM_UI
 local PB = UI.pad.B
@@ -205,3 +211,30 @@ print("... and shown again (told once more):", sends == 2 and not S.IsHidden() a
 local other = { IsValid = function() return true end, GetNW2Bool = function(_, k) return k == "SkateGMHidden" end }
 print("another player's flag hides them:", S.IsHidden(other) and "OK" or "<-- WRONG")
 net.Start = realStart
+do
+	local MK = S.MK
+	MK.arrived, MK.static = nil, 0
+	MK.active, MK.canReturn, MK.progress = true, true, 0.5
+	local k, black = S.MarkerFade(100, 0.016)
+	print("holding to return: static fades in with the hold", math.abs(k - 0.5) < 1e-6 and black == 0 and "OK" or "<-- WRONG")
+	MK.progress = 1
+	k = S.MarkerFade(100.5, 0.016)
+	print("... full by the time it returns", k == 1 and "OK" or "<-- WRONG")
+	MK.arrived, MK.progress, MK.active = 101, 0, false
+	k, black = S.MarkerFade(101.05, 0.016)
+	print("returned: static stays while the screen goes to black", k == 1 and black > 0.4 and black < 0.6 and "OK" or "<-- WRONG")
+	k, black = S.MarkerFade(101 + MK.TO_BLACK + 0.01, 0.016)
+	print("... black, the static gone", k == 0 and black == 1 and "OK" or "<-- WRONG")
+	k, black = S.MarkerFade(101 + MK.TO_BLACK + MK.BLACK_HOLD + MK.FROM_BLACK * 0.5, 0.016)
+	print("... fading back in, no static", k == 0 and black > 0.4 and black < 0.6 and "OK" or "<-- WRONG")
+	k, black = S.MarkerFade(103, 0.016)
+	print("... then clear", k == 0 and black == 0 and MK.arrived == nil and "OK" or "<-- WRONG")
+	MK.active, MK.canReturn, MK.progress = true, true, 0.6
+	S.MarkerFade(104, 0.016)
+	MK.progress, MK.active = 0, false
+	k = S.MarkerFade(104.1, 0.1)
+	print("let go before it returns: the static fades away, not snapping off", k > 0 and k < 0.6 and "OK" or "<-- WRONG")
+	k = S.MarkerFade(104.5, 0.1)
+	k = S.MarkerFade(104.6, 0.1)
+	print("... and is gone", k == 0 and "OK" or "<-- WRONG")
+end

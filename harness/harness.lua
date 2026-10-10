@@ -48,6 +48,10 @@ if os.getenv("SK8_OFF_ADD") then
 	skategm.SetTuning("SK8_OFF", (base and base ~= "" and (base .. ",") or "") .. os.getenv("SK8_OFF_ADD"))
 end
 -- SK8_SPEED_LIMIT: the add-on's top speed setting (m/s, 0 = none)
+if os.getenv("SK8_CHEATS") and skategm.SetCheats then
+	local nb, nf, g = os.getenv("SK8_CHEATS"):match("(%S+)%s+(%S+)%s+(%S+)")
+	skategm.SetCheats(tonumber(nb) or 0, tonumber(nf) or 0, tonumber(g) or 1)
+end
 if os.getenv("SK8_SPEED_LIMIT") and skategm.SetSpeedLimit then skategm.SetSpeedLimit(tonumber(os.getenv("SK8_SPEED_LIMIT")) or 0) end
 -- SK8_OFF_EXTRA: more steps off on top of the style's (for finding which change does what)
 if os.getenv("SK8_OFF_EXTRA") then

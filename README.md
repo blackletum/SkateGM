@@ -57,14 +57,18 @@ Skate 3's own controls work as in the game. Hold **LB** to show the extras:
 | Button | What it does |
 |---|---|
 | LB + D-pad down / up | Set a marker / hold to go back to it |
-| LB + D-pad left | Minigames: host or join |
-| LB + D-pad right | Players: spectate, teleport to, or join someone |
+| LB + D-pad left | Minigames: host or join (with an invite waiting: decline it) |
+| LB + D-pad right | Players: spectate, teleport to, or join someone (with an invite waiting: accept it) |
+| LB + right stick | Skate 3 music: click to pause / play, right to skip, left to start the song over, up / down for volume |
 | LB + A | Settings: playermodel, board, camera, advanced |
 | LB + Y | Map: look around and teleport |
 | LB + B | Park editor |
 | LB + X | Respawn |
 | LB + RB | Replays |
 | Right stick click (hold) | Rocket board, if it's on in Settings > Board |
+
+The controller rumbles on pops, landings, grinds, bails and while the rocket
+fires (Settings > Advanced > Controller turns it off or down).
 
 ### Keyboard
 
@@ -86,6 +90,7 @@ While this works best with a controller, keyboard is supported:
 | R | Respawn |
 | L | Exit free camera mode |
 | Ctrl | Rocket board |
+| Z + Ctrl / Z + arrows | Skate 3 music: pause / play; right skip, left start over, up / down volume |
 | Alt | Use your item (in minigames with items) |
 | W / A / S / D (in the map, park editor, replays) | Move |
 | Backspace (in menus) | Back |
@@ -125,8 +130,8 @@ Cone, Crowbar and Physics Gun. Skate through a crate to take one, then press
 the **left stick in** (keyboard: **Alt**) to use it. Add-ons can add their
 own items: see [docs/ITEMS.md](docs/ITEMS.md).
 
-Hosts can invite players from the game's menu; an invite is joined with
-LB + RT. When you're out or it's someone else's turn you watch the others:
+Hosts can invite players from the game's menu; LB + D-pad right accepts an
+invite, LB + D-pad left declines it. When you're out or it's someone else's turn you watch the others:
 the right stick turns the camera, the D-pad switches player, Y gives a free
 camera.
 
@@ -155,6 +160,12 @@ Building them takes a while (10-15 minutes for all of them), so it's off by
 default: tick "Generate maps (slow)" in the installer and choose which ones
 to build. They go in
 `garrysmod/addons/skategm_maps`.
+
+### Skate 3 music
+
+The installer also decodes Skate 3's soundtrack from your disc, on your PC,
+and it plays (shuffled) while you skate. LB + the right stick controls it
+(see Controls); Settings > Audio turns it off or sets its volume.
 
 ### Multiplayer
 

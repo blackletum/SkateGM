@@ -13,6 +13,7 @@ local List = UI.List
 local SET = UI.settings or {}
 UI.settings = SET
 SET.SPIN, SET.STICK_TURN = 25, 160
+SET.PREVIEW_HEAD, SET.PREVIEW_FEET, SET.PREVIEW_MARGIN = 10, 4, 1.25
 SET.stack = SET.stack or {}
 
 local function CV(name) return GetConVar and GetConVar(name) end
@@ -95,13 +96,30 @@ function SET.Models()
 	return list
 end
 
-local function ModelPreview(row, x, y, w, h) SET.PaintPreview("model", x, y, w, h, row and row.model) end
+local function ModelPreview(row, x, y, w, h)
+	SET.previewRow = row
+	SET.PaintPreview("model", x, y, w, h, row and row.model)
+end
+SET.ModelPreview = ModelPreview
 local function BoardPreview(row, x, y, w, h) SET.PaintPreview("board", x, y, w, h) end
 local TURN = { { keys = { "RS" }, text = "Turn the preview" } }
 
+SET.GRID_COLS, SET.ICON_SIZE, SET.ICONS_PER_FRAME = 5, 256, 2
+SET.icons = SET.icons or {}
+
+function SET.ModelCell(row, x, y, size, selected)
+	draw.RoundedBox(6, x, y, size, size, Color(30, 34, 40, 230))
+	local icon = row.model and SET.Icon(row.model)
+	if icon then
+		surface.SetMaterial(icon)
+		surface.SetDrawColor(255, 255, 255, 255)
+		surface.DrawTexturedRect(x, y, size, size)
+	end
+end
+
 function SET.ModelPage()
 	local models = SET.Models()
-	local page = { title = "Choose a playermodel", preview = ModelPreview, hints = TURN, rows = {} }
+	local page = { title = "Choose a playermodel", preview = ModelPreview, hints = TURN, rows = {}, grid = { cols = SET.GRID_COLS, cell = SET.ModelCell } }
 	local current = Get("cl_playermodel", "kleiner")
 	for i, m in ipairs(models) do
 		page.rows[i] = { label = m.name, model = m.path, mark = function() return Now("cl_playermodel", current) == m.name end,
@@ -260,8 +278,14 @@ function SET.AudioPage()
 	rows[#rows + 1] = BoolRow("Cues (countdown beeps, your turn, fades)", "skategm_game_cues")
 	rows[#rows + 1] = BoolRow("Music", "skategm_game_music")
 	rows[#rows + 1] = NumberRow("Music volume", "skategm_music_volume", 0, 1, 0.05, function(v) return v <= 0 and "muted" or Percent(v) end)
-	rows[#rows + 1] = List.Heading("Boombox")
-	rows[#rows + 1] = NumberRow("Boombox volume", "skategm_boombox_volume", 0, 1, 0.05, function(v) return v <= 0 and "muted" or Percent(v) end)
+	rows[#rows + 1] = List.Heading("Skate 3 music")
+	local SM = SkateGM and SkateGM.skate3Music
+	if SM and SM.Have() then
+		rows[#rows + 1] = BoolRow("Music while skating", "skategm_skate3_music")
+		rows[#rows + 1] = NumberRow("Volume", "skategm_skate3_music_volume", 0, 1, 0.05, function(v) return v <= 0 and "muted" or Percent(v) end)
+	else
+		rows[#rows + 1] = { label = "Music while skating", sub = "no songs: run the installer with your Skate 3 disc", disabled = true }
+	end
 	return { title = "Audio", rows = rows }
 end
 
@@ -295,6 +319,8 @@ function SET.AdvancedPage()
 	local rows = {
 		List.Heading("Controller"),
 		ChoiceRow("Button icons", "skategm_button_style", UI.pad.STYLE_NAMES, nil, 0),
+		BoolRow("Rumble", "skategm_rumble"),
+		NumberRow("Rumble strength", "skategm_rumble_strength", 0.1, 1, 0.1, Percent),
 		List.Heading("Riding"),
 		NumberRow("Top speed", "skategm_speed_limit", 0, 60, 5, function(v) return v <= 0 and "no limit" or string.format("%d m/s", v) end),
 		BoolRow("Other players are solid", "skategm_player_collision"),
@@ -382,6 +408,22 @@ function SET.Skate3HudRows(rows)
 	rows[#rows + 1] = font
 end
 
+SET.GRAVITIES = { 0, 0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 4, 8 }
+function SET.CheatsAllowed() local S = SkateGM return S ~= nil and S.CheatsAllowed ~= nil and S.CheatsAllowed() end
+function SET.CheatsPage()
+	local names = {}
+	for i, g in ipairs(SET.GRAVITIES) do names[i] = g == 1 and "1.0 (default)" or (g == 0 and "0.0" or tostring(g)) end
+	return { title = "Cheats", rows = {
+		BoolRow("No bailing", "skategm_cheat_nobail"),
+		BoolRow("No fall bails", "skategm_cheat_nofall"),
+		List.Choice("Gravity", names, function()
+			local cur, best = NowNum("skategm_cheat_gravity", 1), 1
+			for i, g in ipairs(SET.GRAVITIES) do if math.abs(g - cur) < math.abs(SET.GRAVITIES[best] - cur) then best = i end end
+			return best
+		end, function(i) Set("skategm_cheat_gravity", SET.GRAVITIES[i]) end),
+	} }
+end
+
 function SET.MainPage()
 	local rows = {
 		{ label = "Skater", page = SET.SkaterPage, sub = SET.StylePage and "model, colour, stance, style, gestures" or "your model and colour" },
@@ -391,6 +433,7 @@ function SET.MainPage()
 		{ label = "Audio", page = SET.AudioPage, sub = "board sounds, volumes, cues" },
 		{ label = "Advanced", page = SET.AdvancedPage, sub = "everything else" },
 	}
+	if SET.CheatsAllowed() then rows[#rows + 1] = { label = "Cheats", page = SET.CheatsPage, sub = "single player only" } end
 	return { title = "Settings", rows = rows }
 end
 
@@ -476,7 +519,12 @@ function SET.Think(pad, now, dt)
 		SET.spin = (SET.spin + stick * SET.STICK_TURN * dt) % 360
 		SET.stickAt = now
 	elseif now - (SET.stickAt or -10) > 1.5 then
-		SET.spin = (SET.spin + SET.SPIN * dt) % 360
+		if SET.previewKind == "model" then
+			local off = (SET.spin + 180) % 360 - 180
+			SET.spin = math.abs(off) < 0.5 and 0 or (off - off * math.min(1, dt * 6)) % 360
+		else
+			SET.spin = (SET.spin + SET.SPIN * dt) % 360
+		end
 	end
 	SET.tilt = math.Clamp((SET.tilt or 20) - PAD.Dead(pad.ry) * 90 * dt, -60, 80)
 end
@@ -524,29 +572,11 @@ function SET.DrawBoardPreview(x, y, w, h, under, fit)
 	cam.End3D()
 end
 
-function SET.DrawModelPreview(x, y, w, h, path)
-	if not ClientsideModel then return end
-	path = path or (player_manager and player_manager.TranslatePlayerModel and player_manager.TranslatePlayerModel(Get("cl_playermodel", "kleiner")))
-	if not path then return end
-	if not (IsValid(SET.model) and SET.modelPath == path) then
-		if IsValid(SET.model) then SET.model:Remove() end
-		SET.model = ClientsideModel(path, RENDERGROUP_OPAQUE)
-		SET.modelPath = path
-		if IsValid(SET.model) then
-			SET.model:SetNoDraw(true)
-			local seq = SET.model:LookupSequence("idle_all_01")
-			if seq and seq >= 0 then SET.model:ResetSequence(seq) end
-		end
-	end
-	local e = SET.model
-	if not IsValid(e) then return end
-	local pc = PlayerColour()
-	e.GetPlayerColor = function() return pc end
-	e:SetAngles(Angle(0, SET.spin, 0))
-	e:FrameAdvance(FrameTime())
+function SET.Shoot(e, yaw, tilt, x, y, w, h)
+	e:SetAngles(Angle(0, yaw, 0))
 	local lo, hi = e:GetRenderBounds()
 	local height = math.max(hi.z - lo.z, 40)
-	local ang = Angle(math.Clamp((SET.tilt or 20) * 0.4, -20, 35), 180, 0)
+	local ang = Angle(math.Clamp((tilt or 20) * 0.4, -20, 35), 180, 0)
 	cam.Start3D(Vector(0, 0, (lo.z + hi.z) / 2) - ang:Forward() * height * 1.7, ang, 40, x, y, w, h, 1, 4000)
 	render.ClearDepth()
 	render.SuppressEngineLighting(true)
@@ -557,7 +587,139 @@ function SET.DrawModelPreview(x, y, w, h, path)
 	cam.End3D()
 end
 
+function SET.Posed(path)
+	local e = ClientsideModel(path, RENDERGROUP_OPAQUE)
+	if not IsValid(e) then return nil end
+	e:SetNoDraw(true)
+	local seq = e:LookupSequence("idle_all_01")
+	if seq and seq >= 0 then e:ResetSequence(seq) end
+	return e
+end
+
+function SET.Icon(path)
+	local icon = SET.icons[path]
+	if icon then return icon.mat end
+	if not (GetRenderTarget and CreateMaterial and render.PushRenderTarget and ClientsideModel) then return nil end
+	local frame = FrameNumber and FrameNumber() or 0
+	if SET.iconFrame ~= frame then SET.iconFrame, SET.iconsMade = frame, 0 end
+	if SET.iconsMade >= SET.ICONS_PER_FRAME then return nil end
+	SET.iconsMade = SET.iconsMade + 1
+	local n = table.Count(SET.icons) + 1
+	icon = { n = n }
+	SET.icons[path] = icon
+	local e = SET.Posed(path)
+	if not e then return nil end
+	local s = SET.ICON_SIZE
+	local rt = GetRenderTarget("skategm_pm_icon_" .. n, s, s)
+	local pc = PlayerColour()
+	e.GetPlayerColor = function() return pc end
+	e:SetupBones()
+	render.PushRenderTarget(rt)
+	render.Clear(30, 34, 40, 255, true, true)
+	SET.Shoot(e, 200, 20, 0, 0, s, s)
+	render.PopRenderTarget()
+	e:Remove()
+	icon.mat = CreateMaterial("skategm_pm_icon_mat_" .. n, "UnlitGeneric", { ["$basetexture"] = rt:GetName(), ["$vertexcolor"] = 1 })
+	return icon.mat
+end
+
+function SET.PreviewGesture(row)
+	if not row then return -1 end
+	if row.gestureId then return row.gestureId end
+	if row.gestureDir then return math.floor(NowNum("skategm_gesture_" .. row.gestureDir, -1)) end
+	return -1
+end
+
+function SET.SkatePose(now, row, yaw)
+	local S = SkateGM
+	if not (skategm and skategm.PreviewPose and S and S.DataPath) then return nil end
+	local gesture = SET.PreviewGesture(row)
+	if gesture ~= SET.previewGestureId then
+		SET.previewGestureId, SET.previewGestureAt = gesture, now
+	end
+	local t = now - (SET.previewGestureAt or now)
+	local P = skategm.PreviewPose(S.DataPath(), math.floor(NowNum("skategm_posture", 0)), gesture, t, NowNum("skategm_stance", 0) == 1 and 1 or 0)
+	if type(P) ~= "table" or type(P.HIPS) ~= "table" then return nil end
+	local R, L = P.RIGHTUPLEG or P.RIGHTSHOULDER, P.LEFTUPLEG or P.LEFTSHOULDER
+	local face = 0
+	if type(R) == "table" and type(L) == "table" then
+		local lx, ly = (L[1] or L.x) - (R[1] or R.x), (L[2] or L.y) - (R[2] or R.y)
+		face = -math.deg(math.atan2(-lx, ly))
+	end
+	local r = math.rad((yaw or 0) + face)
+	local c, s = math.cos(r), math.sin(r)
+	local out = {}
+	for k, v in pairs(P) do
+		local x, y, z = v[1] or v.x, v[2] or v.y, v[3] or v.z
+		if x and y and z then out[k] = Vector(x * c - y * s, x * s + y * c, z) end
+	end
+	return out
+end
+
+function SET.DrawSkatePreview(P, x, y, w, h, path)
+	if not (IsValid(SET.rig) and SET.rigPath == path) then
+		if IsValid(SET.rig) then SET.rig:Remove() end
+		SET.rig = ClientsideModel(path, RENDERGROUP_OPAQUE)
+		SET.rigPath = path
+		if not IsValid(SET.rig) then return false end
+		SET.rig:SetNoDraw(true)
+		local seq = SET.rig:LookupSequence("reference")
+		SET.rig:ResetSequence(math.max(seq or 0, 0))
+		SET.rig:SetPlaybackRate(0)
+		SET.rigOk = SkateGM.Rig and SkateGM.Rig(SET.rig)
+	end
+	local e = SET.rig
+	if not (IsValid(e) and SET.rigOk) then return false end
+	local pc = PlayerColour()
+	e.GetPlayerColor = function() return pc end
+	local lo, hi = Vector(math.huge, math.huge, math.huge), Vector(-math.huge, -math.huge, -math.huge)
+	for _, v in pairs(P) do
+		lo = Vector(math.min(lo.x, v.x), math.min(lo.y, v.y), math.min(lo.z, v.z))
+		hi = Vector(math.max(hi.x, v.x), math.max(hi.y, v.y), math.max(hi.z, v.z))
+	end
+	e.Sk8P = P
+	e:SetPos(vector_origin)
+	e:SetRenderBounds(lo - Vector(8, 8, 8), hi + Vector(8, 8, 8))
+	e:InvalidateBoneCache()
+	e:SetupBones()
+	local top, bottom = hi.z + SET.PREVIEW_HEAD, lo.z - SET.PREVIEW_FEET
+	local height = math.max(top - bottom, 40)
+	local fov = 40
+	local vfov = 2 * math.atan(math.tan(math.rad(fov) / 2) * h / math.max(w, 1))
+	local dist = height * 0.5 / math.tan(vfov / 2) * SET.PREVIEW_MARGIN
+	local ang = Angle(math.Clamp((SET.tilt or 20) * 0.4, -20, 35), 180, 0)
+	cam.Start3D(Vector(0, 0, (top + bottom) / 2) - ang:Forward() * dist, ang, fov, x, y, w, h, 1, 4000)
+	render.ClearDepth()
+	render.SuppressEngineLighting(true)
+	render.ResetModelLighting(0.75, 0.75, 0.75)
+	render.SetModelLighting(0, 1, 1, 1)
+	e:DrawModel()
+	render.SuppressEngineLighting(false)
+	cam.End3D()
+	return true
+end
+
+function SET.DrawModelPreview(x, y, w, h, path)
+	if not ClientsideModel then return end
+	path = path or (player_manager and player_manager.TranslatePlayerModel and player_manager.TranslatePlayerModel(Get("cl_playermodel", "kleiner")))
+	if not path then return end
+	local P = SET.SkatePose(RealTime(), SET.previewRow, SET.spin)
+	if P and SET.DrawSkatePreview(P, x, y, w, h, path) then return end
+	if not (IsValid(SET.model) and SET.modelPath == path) then
+		if IsValid(SET.model) then SET.model:Remove() end
+		SET.model = SET.Posed(path)
+		SET.modelPath = path
+	end
+	local e = SET.model
+	if not IsValid(e) then return end
+	local pc = PlayerColour()
+	e.GetPlayerColor = function() return pc end
+	e:FrameAdvance(FrameTime())
+	SET.Shoot(e, SET.spin, SET.tilt, x, y, w, h)
+end
+
 function SET.PaintPreview(kind, x, y, w, h, path)
+	SET.previewKind = kind
 	if not (cam and cam.Start3D) then return end
 	draw.RoundedBox(10, x, y, w, h, Color(0, 0, 0, 120))
 	if kind == "model" then SET.DrawModelPreview(x, y, w, h, path)

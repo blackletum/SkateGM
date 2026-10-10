@@ -213,7 +213,8 @@ fuller examples: they drive `MYMODE.Command(ply, msg, now)` and
   host definition turns every rocket on, full thrust (Rocket Royale);
   `boardRules = false` leaves the switches out.
 - **Invites**: a game's menu offers "Invite players"; the invitee gets a
-  toast and joins with LB + RT while the game is still in its lobby.
+  toast and joins with LB + D-pad right (LB + D-pad left declines) while the
+  game is still in its lobby.
 
 ### Items
 

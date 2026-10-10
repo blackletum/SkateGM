@@ -6,3 +6,4 @@ LIBRARY xinput1_4.dll
 EXPORTS
 XInputGetState
 XInputGetCapabilities
+XInputSetState
