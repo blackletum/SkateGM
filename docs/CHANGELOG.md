@@ -12,6 +12,7 @@
 - **Loading**: added a nicer-looking loading screen, and added a progress bar.
 - **Invites**: added ability to decline invites with `LB` + `D-Pad left`. Rebound accepting to `LB` +  `D-Pad Right` 
 - Fixed invisible playermodels when a conflicting add-on also manages player transparency.
+- Fixed the multiplier sounds disappearing after updating.
 
 ## 8.0
 

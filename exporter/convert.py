@@ -82,6 +82,10 @@ def prepare_hud(xex, data):
 SOUNDS = ['data/audio/audiofiles.big', 'data/audio/grains.big']
 
 
+def hud_sounds(data):
+    return Path(data) / 'assets' / 'private' / 'gmod_hud' / 'sound'
+
+
 def build_sounds(xex, data, gmod, vgmstream, aems_render=None):
     """Skate 3's board sounds into Garry's Mod (asset_pipeline/skate3_sounds.py)."""
     from tools.asset_pipeline import skate3_sounds
@@ -93,7 +97,7 @@ def build_sounds(xex, data, gmod, vgmstream, aems_render=None):
 
     def run(game):
         with tempfile.TemporaryDirectory(prefix='skategm-sounds-', dir=data) as work:
-            return skate3_sounds.build(game, collections, gmod, vgmstream, Path(work), report, aems_render)
+            return skate3_sounds.build(game, collections, gmod, vgmstream, Path(work), report, aems_render, hud_sounds(data))
     if xex.suffix.lower() == '.iso':
         import xiso
         with tempfile.TemporaryDirectory(prefix='skategm-disc-', dir=data) as disc:

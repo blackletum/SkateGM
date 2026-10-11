@@ -178,8 +178,8 @@ def install(gmod, xex, data, report, skip_convert=False, build_maps=True, map_na
         raise RuntimeError("Couldn't replace the engine module: close Garry's Mod and try again.")
     (garrysmod / 'data' / 'skategm').mkdir(parents=True, exist_ok=True)
     (garrysmod / 'data' / 'skategm' / 'datapath.txt').write_text(str((data / 'assets').resolve()).replace('\\', '/'), encoding='utf-8')
-    install_hud(garrysmod, xex or remembered_source(data), data, report)
     install_sounds(gmod, xex or remembered_source(data), data, report)
+    install_hud(garrysmod, xex or remembered_source(data), data, report)
     install_music(gmod, xex or remembered_source(data), data, report)
     if build_maps:
         install_maps(gmod, xex or remembered_source(data), data, report, map_names)
@@ -223,7 +223,8 @@ def install_sounds(gmod, game, data, report):
     """Skate 3's own board sounds, from the player's game (a few seconds)."""
     try:
         from tools.asset_pipeline import skate3_sounds
-        if skate3_sounds.installed(gmod):
+        import convert as exporter
+        if skate3_sounds.installed(gmod, exporter.hud_sounds(data)):
             report('Skate 3 board sounds: already installed, keeping them')
             return
     except Exception:

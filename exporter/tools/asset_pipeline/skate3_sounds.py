@@ -353,9 +353,11 @@ def render_loops(files, by_name, aems_render, vgmstream, work, root, report):
     return made
 
 
-def installed(gmod):
+def installed(gmod, hud_sounds=None):
     """True when this builder's sounds are already in garrysmod (same VERSION)."""
     gmod = Path(gmod)
+    if hud_sounds is not None and not (Path(hud_sounds) / 'multiplier_2.wav').is_file():
+        return False
     try:
         manifest = json.loads((gmod / 'garrysmod' / 'data' / 'skategm' / 'skate3_sounds.json').read_text(encoding='utf-8'))
     except (OSError, ValueError):
@@ -364,7 +366,7 @@ def installed(gmod):
     return manifest.get('version') == VERSION and sounds.is_dir() and next(sounds.rglob('*.wav'), None) is not None
 
 
-def build(game_root, collections_path, gmod, vgmstream, work, report=print, aems_render=None):
+def build(game_root, collections_path, gmod, vgmstream, work, report=print, aems_render=None, hud_sounds=None):
     """Decode the sounds into garrysmod/addons/skategm_s3sounds; return the manifest."""
     game_root, gmod, work = Path(game_root), Path(gmod), Path(work)
     collections = json.loads(Path(collections_path).read_text(encoding='utf-8'))['collections']
@@ -422,7 +424,8 @@ def build(game_root, collections_path, gmod, vgmstream, work, report=print, aems
             continue
         abk[stem] = picks
     try:
-        frontend(files, by_name, collections, vgmstream, work, gmod / 'garrysmod' / 'data' / 'skategm_hud' / 'sound', report)
+        frontend(files, by_name, collections, vgmstream, work,
+                 Path(hud_sounds) if hud_sounds else gmod / 'garrysmod' / 'data' / 'skategm_hud' / 'sound', report)
     except Exception as error:
         report("Skate 3 trick display sounds were skipped: " + (str(error) or type(error).__name__))
     loops = 0
