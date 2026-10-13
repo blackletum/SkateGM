@@ -32,7 +32,6 @@ own copy.
 
 1. **Subscribe to SkateGM on the
    [Steam Workshop](https://steamcommunity.com/workshop/browse/?appid=4000&searchtext=SkateGM).**
-   That's the add-on, the gamemode and the warehouse map; Steam keeps it up to date.
 2. Download **`SkateGM-Setup-<version>.exe`** from the
    [latest release](../../releases/latest).
 3. Close Garry's Mod and run the installer.
