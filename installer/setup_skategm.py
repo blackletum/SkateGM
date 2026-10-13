@@ -35,6 +35,9 @@ DLL = 'gmcl_skategm_win64.dll'
 BIN_EXTRAS = ['skategm_sdl2.dll', 'skategm_gamecontrollerdb.txt']
 OLD_FILES = ['lua/bin/gmcl_sk8_win64.dll']
 OLD_ADDONS = ['skate3_native', 'skategm']
+WORKSHOP_ID = ''
+WORKSHOP_URL = (f'https://steamcommunity.com/sharedfiles/filedetails/?id={WORKSHOP_ID}' if WORKSHOP_ID
+                else 'https://steamcommunity.com/workshop/browse/?appid=4000&searchtext=SkateGM')
 DEFAULT_DATA = Path(os.environ.get('LOCALAPPDATA', str(Path.home()))) / 'SkateGM' / 'data'
 
 
@@ -122,7 +125,7 @@ class Cancelled(Exception):
 
 
 def installed(gmod):
-    return (Path(gmod) / 'garrysmod' / 'addons' / 'skategm').is_dir()
+    return (Path(gmod) / 'garrysmod' / 'lua' / 'bin' / DLL).is_file()
 
 
 def data_ready(data):
@@ -148,7 +151,7 @@ def remove_tree(path):
         raise RuntimeError(IN_USE)
 
 
-def install(gmod, xex, data, report, skip_convert=False, build_maps=True, map_names=None):
+def install(gmod, xex, data, report, skip_convert=False, build_maps=True, map_names=None, skate2=None, install_addon=False):
     gmod = Path(gmod)
     if not is_gmod(gmod):
         raise RuntimeError(f"{gmod} doesn't look like Garry's Mod (no garrysmod folder).")
@@ -163,12 +166,15 @@ def install(gmod, xex, data, report, skip_convert=False, build_maps=True, map_na
         remember_source(data, xex)
     if not data_ready(data):
         raise RuntimeError('The game data conversion did not finish.')
-    report('Installing the add-on...')
     for old in OLD_ADDONS:
+        if not install_addon and (garrysmod / 'addons' / old).exists():
+            report(f'Removing the add-on copy in addons/{old} (it would clash with the Workshop one)...')
         remove_tree(garrysmod / 'addons' / old)
     for old in OLD_FILES:
         (garrysmod / old).unlink(missing_ok=True)
-    shutil.copytree(payload_dir('addon'), garrysmod / 'addons' / 'skategm')
+    if install_addon:
+        report('Installing the add-on...')
+        shutil.copytree(payload_dir('addon'), garrysmod / 'addons' / 'skategm')
     report('Installing the engine module...')
     (garrysmod / 'lua' / 'bin').mkdir(parents=True, exist_ok=True)
     try:
@@ -181,22 +187,31 @@ def install(gmod, xex, data, report, skip_convert=False, build_maps=True, map_na
     install_sounds(gmod, xex or remembered_source(data), data, report)
     install_hud(garrysmod, xex or remembered_source(data), data, report)
     install_music(gmod, xex or remembered_source(data), data, report)
+    if skate2:
+        remember_source(data, skate2, 'skate2')
     if build_maps:
-        install_maps(gmod, xex or remembered_source(data), data, report, map_names)
+        install_maps(gmod, xex or remembered_source(data), data, report, map_names,
+                     skate2 or remembered_source(data, 'skate2'))
+    if not install_addon:
+        report('Subscribe to SkateGM on the Steam Workshop if you haven\'t: ' + WORKSHOP_URL)
     report('Done! Start Garry\'s Mod and pick the SkateGM gamemode, or in any other gamemode type '
            '"bind j skategm_toggle" in the console once and press J.')
 
 
-def remember_source(data, xex):
+def _source_file(data, game):
+    return Path(data) / ('source.txt' if game == 'skate3' else f'source_{game}.txt')
+
+
+def remember_source(data, xex, game='skate3'):
     try:
-        (Path(data) / 'source.txt').write_text(str(Path(xex).resolve()), encoding='utf-8')
+        _source_file(data, game).write_text(str(Path(xex).resolve()), encoding='utf-8')
     except OSError:
         pass
 
 
-def remembered_source(data):
+def remembered_source(data, game='skate3'):
     try:
-        path = Path((Path(data) / 'source.txt').read_text(encoding='utf-8').strip())
+        path = Path(_source_file(data, game).read_text(encoding='utf-8').strip())
     except OSError:
         return None
     return path if path.exists() else None
@@ -261,17 +276,17 @@ def install_music(gmod, game, data, report):
         report('Skate 3 music was skipped (no music while skating): ' + (str(error) or type(error).__name__))
 
 
-def install_maps(gmod, game, data, report, names=None):
-    if not game:
-        report('Skate 3 maps: choose your Skate 3 disc image (.iso) or default.xex to build them.')
+def install_maps(gmod, game, data, report, names=None, skate2=None):
+    if not game and not skate2:
+        report('Maps: choose your Skate 3 (or Skate 2) disc image (.iso) or default.xex to build them.')
         return
-    report('Building the Skate 3 maps (a few minutes each)...')
+    report('Building the maps (a few minutes each)...')
     try:
         from mapgen.install import install_maps as build_all
-        built, failed = build_all(game, gmod, Path(data) / 'mapgen', report, names=names)
+        built, failed = build_all({'skate3': game, 'skate2': skate2}, gmod, Path(data) / 'mapgen', report, names=names)
     except Exception as error:
         traceback.print_exc()
-        report('Skate 3 maps were skipped: ' + (str(error) or type(error).__name__))
+        report('Maps were skipped: ' + (str(error) or type(error).__name__))
         return
     if failed:
         report('Some maps could not be built: ' + ', '.join(failed))
@@ -304,23 +319,23 @@ def uninstall(gmod, data, report, remove_data=False):
 # the window
 # --------------------------------------------------------------------------
 def map_choices():
+    """[(section title, [(map name, label, game)])]"""
     try:
-        from mapgen.regions import REGIONS
+        from mapgen.install import sections
     except Exception:
         traceback.print_exc()
         return []
-    return [(r.map_name, f'{r.title} ({r.map_name})') for r in REGIONS]
+    return [(title, [(r.map_name, f'{r.title} ({r.map_name})', r.game) for r in maps]) for title, maps in sections()]
 
 
 def outdated_maps(gmod):
     try:
         from mapgen import install as mapinstall
-        from mapgen.regions import REGIONS
     except Exception:
         return []
     state = mapinstall.read_state(gmod)
     maps = mapinstall.addon_dir(gmod) / 'maps'
-    return [r.map_name for r in REGIONS
+    return [r.map_name for r in mapinstall.catalog()
             if (maps / f'{r.map_name}.bsp').is_file() and state.get(r.map_name, {}).get('key') != mapinstall.region_key(r)]
 
 
@@ -336,6 +351,7 @@ def window():
     found = find_gmod()
     gmod_var = tk.StringVar(value=str(found) if found else '')
     xex_var = tk.StringVar()
+    skate2_var = tk.StringVar()
     data_var = tk.StringVar(value=str(DEFAULT_DATA))
 
     frm = ttk.Frame(root, padding=12)
@@ -372,45 +388,69 @@ def window():
         if f:
             xex_var.set(f)
 
+    def browse_skate2():
+        f = filedialog.askopenfilename(title='Your Skate 2 disc image (.iso), or default.xex from an extracted copy',
+                                       filetypes=[('Skate 2 disc image or default.xex', '*.iso default.xex'), ('Disc image', '*.iso'), ('default.xex', 'default.xex')])
+        if f:
+            skate2_var.set(f)
+
     def browse_data():
         d = filedialog.askdirectory(title='Where to keep the converted game data')
         if d:
             data_var.set(d)
             check()
 
-    rows = [("Garry's Mod folder", gmod_var, browse_gmod), ('Skate 3 (.iso or default.xex)', xex_var, browse_xex), ('Converted data goes in', data_var, browse_data)]
+    rows = [("Garry's Mod folder", gmod_var, browse_gmod), ('Skate 3 (.iso or default.xex)', xex_var, browse_xex),
+            ('Skate 2, for its maps (optional)', skate2_var, browse_skate2), ('Converted data goes in', data_var, browse_data)]
     for i, (label, var, cmd) in enumerate(rows):
         ttk.Label(frm, text=label).grid(column=0, row=2 + i, sticky='w', **pad)
         ttk.Entry(frm, textvariable=var, width=58).grid(column=1, row=2 + i, **pad)
         ttk.Button(frm, text='Browse...', command=cmd).grid(column=2, row=2 + i, **pad)
 
     status = tk.StringVar()
-    ttk.Label(frm, textvariable=status, wraplength=520, foreground='#a0522d').grid(column=0, row=5, columnspan=3, sticky='w', pady=(4, 0))
+    ttk.Label(frm, textvariable=status, wraplength=520, foreground='#a0522d').grid(column=0, row=6, columnspan=3, sticky='w', pady=(4, 0))
+    opts = ttk.Frame(frm)
+    opts.grid(column=0, row=7, columnspan=3, sticky='w')
     reuse = tk.BooleanVar(value=False)
-    reuse_box = ttk.Checkbutton(frm, text='Keep the game data I already converted (skip converting)', variable=reuse)
-    reuse_box.grid(column=0, row=6, columnspan=3, sticky='w')
+    reuse_box = ttk.Checkbutton(opts, text='Keep the game data I already converted (skip converting)', variable=reuse)
+    reuse_box.grid(column=0, row=0, columnspan=2, sticky='w')
+    addon = tk.BooleanVar(value=False)
+    ttk.Checkbutton(opts, text='Install add-on', variable=addon).grid(column=0, row=1, sticky='w')
+    ttk.Label(opts, text='(You can also do this from the Workshop)', foreground='#808080').grid(column=1, row=1, sticky='w', padx=(6, 0))
     maps = tk.BooleanVar(value=False)
     choices = ttk.Frame(frm)
-    picks = {}
-    for i, (name, title) in enumerate(map_choices()):
-        picks[name] = tk.BooleanVar(value=True)
-        ttk.Checkbutton(choices, text=title, variable=picks[name]).grid(column=i % 2, row=i // 2, sticky='w', padx=(24, 12))
+    picks, pick_game = {}, {}
+    choices.columnconfigure(0, weight=1)
+    choices.columnconfigure(1, weight=1)
+    row = 0
+    for title, mine in map_choices():
+        heading = ttk.Frame(choices)
+        heading.grid(column=0, row=row, columnspan=2, sticky='ew', padx=(24, 10), pady=(10 if row else 4, 2))
+        heading.columnconfigure(1, weight=1)
+        ttk.Label(heading, text=title, font=('Segoe UI', 10, 'bold'), foreground='#2b6cb0').grid(column=0, row=0, sticky='w')
+        ttk.Separator(heading, orient='horizontal').grid(column=1, row=0, sticky='ew', padx=(8, 0))
+        row += 1
+        for i, (name, label, gid) in enumerate(mine):
+            picks[name] = tk.BooleanVar(value=True)
+            pick_game[name] = gid
+            ttk.Checkbutton(choices, text=label, variable=picks[name]).grid(column=i % 2, row=row + i // 2, sticky='w', padx=(32, 12))
+        row += (len(mine) + 1) // 2
 
     def show_choices():
         if maps.get() and picks:
-            choices.grid(column=0, row=8, columnspan=3, sticky='w')
+            choices.grid(column=0, row=9, columnspan=3, sticky='ew')
         else:
             choices.grid_remove()
     ttk.Checkbutton(frm, text='Generate maps (slow)', variable=maps,
-                    command=show_choices).grid(column=0, row=7, columnspan=3, sticky='w')
+                    command=show_choices).grid(column=0, row=8, columnspan=3, sticky='w')
 
     log = tk.Text(frm, width=74, height=10, state='disabled', wrap='word')
-    log.grid(column=0, row=9, columnspan=3, pady=8, padx=10)
+    log.grid(column=0, row=10, columnspan=3, pady=8, padx=10)
     bar = ttk.Progressbar(frm, mode='indeterminate', length=520)
-    bar.grid(column=0, row=10, columnspan=3)
+    bar.grid(column=0, row=11, columnspan=3)
 
     buttons = ttk.Frame(frm)
-    buttons.grid(column=0, row=11, columnspan=3, pady=(8, 0), sticky='e')
+    buttons.grid(column=0, row=12, columnspan=3, pady=(8, 0), sticky='e')
 
     seen = {}
 
@@ -482,11 +522,17 @@ def window():
             return messagebox.showerror(TITLE, "Choose your Garry's Mod folder first.")
         if not reuse.get() and not x:
             return messagebox.showerror(TITLE, 'Choose your Skate 3 disc image (.iso) or default.xex first.')
+        s2 = skate2_var.get().strip()
         chosen = [name for name, var in picks.items() if var.get()]
         build = maps.get() and (bool(chosen) or not picks)
-        if build and not x:
-            return messagebox.showerror(TITLE, 'Generating maps needs your Skate 3 disc image (.iso): choose it first.')
-        run(lambda: install(g, x, d, say, skip_convert=reuse.get(), build_maps=build, map_names=chosen or None))
+        if build and not x and any(pick_game.get(n) == 'skate3' for n in chosen):
+            return messagebox.showerror(TITLE, 'Generating Skate 3 maps needs your Skate 3 disc image (.iso): choose it first.')
+        if build and not s2 and any(pick_game.get(n) == 'skate2' for n in chosen):
+            if not messagebox.askokcancel(TITLE, 'Skate 2 maps need your Skate 2 disc image (.iso) or default.xex. '
+                                                 'Without it they are skipped. Continue?'):
+                return
+        run(lambda: install(g, x, d, say, skip_convert=reuse.get(), build_maps=build, map_names=chosen or None, skate2=s2 or None,
+                            install_addon=addon.get()))
 
     def do_uninstall():
         g = gmod_var.get().strip()
@@ -534,11 +580,13 @@ def main():
     parser = argparse.ArgumentParser(description=TITLE)
     parser.add_argument('--gmod', type=Path)
     parser.add_argument('--xex', type=Path)
+    parser.add_argument('--skate2', type=Path, help='Skate 2 disc image or default.xex, for its maps')
     parser.add_argument('--data', type=Path, default=DEFAULT_DATA)
     parser.add_argument('--skip-convert', action='store_true')
     parser.add_argument('--build-maps', action='store_true', help='build the Skate 3 maps (slow)')
     parser.add_argument('--no-maps', action='store_true', help="don't build the Skate 3 maps (the default)")
     parser.add_argument('--maps', help='build only these maps (comma separated, e.g. sgm_skate3_maloof)')
+    parser.add_argument('--install-addon', action='store_true', help='install the add-on too (it also comes from the Workshop)')
     parser.add_argument('--uninstall', action='store_true')
     parser.add_argument('--remove-data', action='store_true')
     parser.add_argument('--find', action='store_true', help="just print where Garry's Mod is")
@@ -558,7 +606,7 @@ def main():
                 print("WARNING: Garry's Mod isn't on the x86-64 branch (Steam > Properties > Betas > x86-64); SkateGM needs it.")
             names = [n.strip() for n in args.maps.split(',') if n.strip()] if args.maps else None
             install(gmod, args.xex, args.data, print, skip_convert=args.skip_convert, build_maps=(args.build_maps or bool(names)) and not args.no_maps,
-                    map_names=names)
+                    map_names=names, skate2=args.skate2, install_addon=args.install_addon)
     except Exception as error:
         traceback.print_exc()
         print('ERROR: ' + str(error))

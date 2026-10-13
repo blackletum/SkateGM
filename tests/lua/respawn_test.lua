@@ -1,4 +1,6 @@
 dofile("gmock.lua")
+game = { GetMap = function() return "gm_test" end }
+function GetGlobal2String(_, d) return d end
 local function check(label, ok) print(string.format("%-66s %s", label, ok and "OK" or "<-- WRONG")) end
 local hooks, receivers, sent = {}, {}, {}
 local veto

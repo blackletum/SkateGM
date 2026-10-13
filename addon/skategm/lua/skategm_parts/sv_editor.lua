@@ -20,8 +20,9 @@ if cleanup and cleanup.Register then cleanup.Register(ED.LIMIT) end
 
 -- the spawn menu too: a park part asks the parts limit, not the sents one
 hook.Add("PlayerSpawnSENT", "skategm_parts_limit", function(ply, class)
-	if type(class) == "string" and class:sub(1, 13) == "skategm_part_" and IsValid(ply) and ply.CheckLimit then
-		return ply:CheckLimit(ED.LIMIT)
+	if type(class) == "string" and class:sub(1, 13) == "skategm_part_" and IsValid(ply) then
+		if not ED.MayEdit(ply) then return false end
+		if ply.CheckLimit and not ply:CheckLimit(ED.LIMIT) then return false end
 	end
 end)
 hook.Add("PlayerSpawnedSENT", "skategm_parts_limit", function(ply, e)
@@ -85,7 +86,8 @@ function ED.Place(ply, id, pos, yaw)
 	if not Editing(ply) then return nil, "not in the park editor" end
 	local def = P.Get(id)
 	if not def then return nil, "no such part" end
-	if pos:Distance(ply:GetPos()) > ED.REACH * 2 then return nil, "too far away" end
+	local SPACE = SKATEGM_SPACE
+	if pos:Distance(SPACE.Abs(ply)) > ED.REACH * 2 then return nil, "too far away" end
 	if PartCount() >= ED.MAX_PARTS then return nil, "the park is full (" .. ED.MAX_PARTS .. " parts)" end
 	local class = "skategm_part_" .. id
 	-- (other add-ons' say, e.g. admin mods; park parts have their own limit,
@@ -94,7 +96,7 @@ function ED.Place(ply, id, pos, yaw)
 	if ply.CheckLimit and not ply:CheckLimit(ED.LIMIT) then return nil end
 	local e = ents.Create(class)
 	if not IsValid(e) then return nil, "couldn't make it" end
-	e:SetPos(pos)
+	e:SetPos(SPACE.ToLocal(ply, pos))
 	e:SetAngles(Angle(0, yaw, 0))
 	e:Spawn()
 	e:Activate()
@@ -111,15 +113,15 @@ function ED.Place(ply, id, pos, yaw)
 	if ply.AddCleanup then ply:AddCleanup(ED.LIMIT, e) end
 	if ply.AddCount then ply:AddCount(ED.LIMIT, e) end
 	hook.Call("PlayerSpawnedSENT", nil, ply, e)
+	SPACE.Place(e, pos)
 	return e
 end
 
 function ED.Move(ply, e, pos, yaw)
 	if not Editing(ply) then return false end
 	if not ED.MayChange(ply, e) then return false, "that part isn't yours to move" end
-	if pos:Distance(ply:GetPos()) > ED.REACH * 2 then return false, "too far away" end
-	e:SetPos(pos)
-	e:SetAngles(Angle(0, yaw, 0))
+	if pos:Distance(SKATEGM_SPACE.Abs(ply)) > ED.REACH * 2 then return false, "too far away" end
+	SKATEGM_SPACE.Place(e, pos, Angle(0, yaw, 0))
 	local phys = e:GetPhysicsObject()
 	if IsValid(phys) then
 		phys:EnableMotion(false)
@@ -142,7 +144,11 @@ end)
 -- the editor's camera (the watermelon), passed on to everyone else
 net.Receive("skategm_editor_cam", function(_, ply)
 	if not Editing(ply) then return end
-	local pos, ang = net.ReadVector(), net.ReadAngle()
+	local now = SysTime()
+	if now - (ply.SkateGMEditorCamAt or 0) < 1 / 30 then return end
+	ply.SkateGMEditorCamAt = now
+	local pos, ang = SKATEGM_MODES.FiniteVec(net.ReadVector()), net.ReadAngle()
+	if not pos then return end
 	ply.SkateGMEditorCam = pos
 	net.Start("skategm_editor_cam", true)
 	net.WriteEntity(ply)
@@ -152,13 +158,15 @@ net.Receive("skategm_editor_cam", function(_, ply)
 end)
 
 net.Receive("skategm_editor_place", function(_, ply)
-	local id, pos, yaw = net.ReadString(), net.ReadVector(), net.ReadFloat()
+	local id, pos, yaw = net.ReadString(), SKATEGM_MODES.FiniteVec(net.ReadVector()), SKATEGM_MODES.Num(net.ReadFloat())
+	if not (pos and yaw) then return end
 	local e, why = ED.Place(ply, id, pos, yaw)
 	if not e and why then Reply(ply, why) end
 end)
 
 net.Receive("skategm_editor_move", function(_, ply)
-	local e, pos, yaw = net.ReadEntity(), net.ReadVector(), net.ReadFloat()
+	local e, pos, yaw = net.ReadEntity(), SKATEGM_MODES.FiniteVec(net.ReadVector()), SKATEGM_MODES.Num(net.ReadFloat())
+	if not (pos and yaw) then return end
 	local ok, why = ED.Move(ply, e, pos, yaw)
 	if not ok and why then Reply(ply, why) end
 end)

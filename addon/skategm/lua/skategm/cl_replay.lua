@@ -61,6 +61,8 @@ end
 -- in S.BONES order, to a tenth of a unit
 function R.Encode(clip, meta, edit)
 	local lines = { "skategm replay 1", "map " .. (meta and meta.map or "?"), "date " .. (meta and meta.date or "?") }
+	local fr = S.CurrentFrame and S.CurrentFrame()
+	if fr and (fr.x ~= 0 or fr.y ~= 0 or fr.z ~= 0) then lines[#lines + 1] = string.format("frame %.1f %.1f %.1f", fr.x, fr.y, fr.z) end
 	if edit then
 		lines[#lines + 1] = "filter " .. (edit.filter or "none")
 		if edit.trim then lines[#lines + 1] = string.format("trim %.3f %.3f", edit.trim[1], edit.trim[2]) end
@@ -91,10 +93,14 @@ function R.Decode(text)
 	local clip, meta = {}, {}
 	local edit = { filter = "none", keys = {} }
 	local rockets = {}
+	local saved = Vector(0, 0, 0)
 	for line in text:gmatch("[^\n]+") do
 		local k, v = line:match("^(%a+) (.*)$")
 		if k == "map" or k == "date" then
 			meta[k] = v
+		elseif k == "frame" then
+			local x, y, z = v:match("^([%d%.%-]+) ([%d%.%-]+) ([%d%.%-]+)$")
+			if x then saved = Vector(tonumber(x), tonumber(y), tonumber(z)) end
 		elseif k == "filter" then
 			edit.filter = R.FILTERS[R.FilterIndex(v)].id
 		elseif k == "trim" then
@@ -124,6 +130,16 @@ function R.Decode(text)
 	for _, f in ipairs(clip) do
 		for _, s in ipairs(rockets) do
 			if f.t >= s[1] and f.t <= s[2] then f.rocket = true break end
+		end
+	end
+	local now = S.CurrentFrame and S.CurrentFrame() or Vector(0, 0, 0)
+	local delta = saved - now
+	if delta.x ~= 0 or delta.y ~= 0 or delta.z ~= 0 then
+		for _, f in ipairs(clip) do
+			for name, v in pairs(f.P) do f.P[name] = v + delta end
+		end
+		for _, key in ipairs(edit.keys) do
+			if key.pos and key.mode ~= "chase" then key.pos = key.pos + delta end
 		end
 	end
 	table.sort(edit.keys, function(a, b) return a.t < b.t end)

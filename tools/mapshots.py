@@ -126,6 +126,7 @@ def main():
     ap.add_argument('--gamemode', default='sandbox')
     ap.add_argument('--server-lua', help='Lua run on the server 10 s after the map loads')
     ap.add_argument('--remove', action='store_true')
+    ap.add_argument('--keep', help='copy the full-size shots into this folder')
     a = ap.parse_args()
     gmod = gmod_dir(a.gmod) / 'garrysmod'
     addon = gmod / 'addons' / 'skategm_mapshots'
@@ -173,6 +174,10 @@ def main():
     names = [line.split()[0] for line in plan.splitlines() if line.strip() and not line.startswith('cmd ')]
     if a.sheet:
         print(sheet(data, names, Path(a.sheet)))
+    if a.keep:
+        Path(a.keep).mkdir(parents=True, exist_ok=True)
+        for f in data.glob('*.jpg'):
+            shutil.copy(f, Path(a.keep) / f.name)
     if (data / 'frametimes.txt').is_file():
         print((data / 'frametimes.txt').read_text(encoding='utf-8'))
     for _ in range(40):

@@ -435,7 +435,7 @@ end
 function MENU.NextTo(ply)
 	local a = API()
 	local P = a and a.PoseOf and a.PoseOf(ply)
-	local feet = P and P.HIPS and (P.TRUCK_FRONT and P.TRUCK_BACK and (P.TRUCK_FRONT + P.TRUCK_BACK) / 2 or P.HIPS - Vector(0, 0, 36)) or ply:GetPos()
+	local feet = P and P.HIPS and (P.TRUCK_FRONT and P.TRUCK_BACK and (P.TRUCK_FRONT + P.TRUCK_BACK) / 2 or P.HIPS - Vector(0, 0, 36)) or SKATEGM_SPACE.View(ply)
 	local yaw = P and P.TRUCK_FRONT and P.TRUCK_BACK and (P.TRUCK_FRONT - P.TRUCK_BACK):Angle().y or ply:EyeAngles().y
 	local side = Angle(0, yaw + 90, 0):Forward()
 	return feet + side * 64 + Vector(0, 0, 4), yaw
@@ -487,6 +487,7 @@ function MENU.StartSpectating(ply)
 	local a = API()
 	MENU.spec = { target = ply }
 	MENU.stack = {}
+	if a and a.SetWatched then a.SetWatched(ply) end
 	if a and a.Freeze then a.Freeze(true, "menuspec") end
 	if a and a.SetHidden then a.SetHidden("menuspec", true) end
 	if a and a.SetView then a.SetView(function(_, _, fov) return MENU.SpectateView(fov) end, "menuspec") end
@@ -495,6 +496,7 @@ end
 function MENU.StopSpectating()
 	local a = API()
 	MENU.spec = nil
+	if a and a.SetWatched then a.SetWatched(nil) end
 	if a and a.Freeze then a.Freeze(false, "menuspec") end
 	if a and a.SetHidden then a.SetHidden("menuspec", false) end
 	M.GiveViewBack("menuspec")
@@ -507,6 +509,8 @@ function MENU.SwitchTarget(dir)
 	for i, p in ipairs(list) do if p == MENU.spec.target then idx = i end end
 	idx = (idx - 1 + dir) % #list + 1
 	MENU.spec = { target = list[idx] }
+	local a = API()
+	if a and a.SetWatched then a.SetWatched(list[idx]) end
 end
 
 function MENU.SpectateView(fov)
@@ -599,7 +603,7 @@ function MENU.Think(pad, now, dt)
 	local fc = MENU.fc
 	if fc then
 		UI.Fly(fc, pad, dt, FLY_SPEED, LOOK_SPEED)
-		local tr = util.TraceLine({ start = fc.pos, endpos = fc.pos + fc.ang:Forward() * 8000, mask = MASK_SOLID_BRUSHONLY })
+		local tr = (SkateGMTraceWorld or util.TraceLine)({ start = fc.pos, endpos = fc.pos + fc.ang:Forward() * 8000, mask = MASK_SOLID_BRUSHONLY })
 		fc.target = tr.Hit and tr.HitPos or nil
 		if fc.obj then MENU.HoldTurn(fc, pad, now, dt) end
 	end

@@ -40,14 +40,17 @@ check("... nested ones too (each player's start, the orbs)", st.players[1].start
 check("... timers alone", st.timeLeft == 30)
 local seenStart
 mode:OnState(function(s) seenStart = s.start and s.start[1] end)
-M.FrameThink(1)
 offset = Vector(60000, -20000, 0)
-M.FrameThink(2)
+M.FrameShifted(Vector(20000, 0, 0), 2)
 check("crossing into the next chunk: the game's positions follow", seenStart == 40001 - 60000)
 
 -- modes that keep positions of their own hear by how much the frame moved
 local shifted
 mode:OnFrameShift(function(d) shifted = d end)
 offset = Vector(80000, -20000, 0)
-M.FrameThink(3)
+M.FrameShifted(Vector(20000, 0, 0), 3)
 check("a mode keeping its own positions hears the frame's shift", shifted and shifted.x == 20000 and shifted.y == 0)
+local any = M.ShiftPositions({ tee = M.Vec({ 1, 2, 3 }), nested = { cup = Vector(10, 0, 0) } }, Vector(100, 0, 0))
+check("a point M.Vec checked converts under any name (no key list to keep up)", any.tee.x == 101 and any.nested.cup.x == 110)
+check("points far out on a streamed map pass (Downtown sits ~300k units out)", M.Vec({ 300000, -40000, 120 }) ~= nil)
+check("NaN or infinite points from a client don't", M.FiniteVec(Vector(0 / 0, 0, 0)) == nil and M.FiniteVec(Vector(math.huge, 0, 0)) == nil and M.Vec({ 0 / 0, 1, 2 }) == nil)

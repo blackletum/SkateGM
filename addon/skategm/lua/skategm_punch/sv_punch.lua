@@ -19,7 +19,7 @@ local BOARD_SOUNDS = { "physics/wood/wood_plank_impact_hard1.wav", "physics/wood
 -- where a target's body is: a skater's skeleton, otherwise the entity's centre
 local function BodyOf(ent)
 	if ent:IsPlayer() and ent.SkateGM and ent.SkateGMHips then return ent.SkateGMHips end
-	return ent:WorldSpaceCenter()
+	return SKATEGM_SPACE.FromLocal(ent, ent:WorldSpaceCenter())
 end
 
 net.Receive(P.NET, function(_, ply)
@@ -36,7 +36,7 @@ net.Receive(P.NET, function(_, ply)
 	dir:Normalize()
 	local fist = from + dir * (board and P.REACH_BOARD or P.REACH)
 	local best, bestD
-	for _, ent in ipairs(ents.FindInSphere(fist, P.RADIUS + 48)) do
+	for _, ent in ipairs(SKATEGM_SPACE.FindInSphere(fist, P.RADIUS + 48)) do
 		if ent ~= ply and (ent:IsPlayer() and ent:Alive() or ent:IsNPC()) then
 			local body = BodyOf(ent)
 			local d = body:Distance(fist)
@@ -48,12 +48,12 @@ net.Receive(P.NET, function(_, ply)
 	if best and M and M.SessionOf and (M.SessionOf(ply) or (best:IsPlayer() and M.SessionOf(best))) then best = nil end
 	if best and hook.Run("SkateGMCanPunch", ply, best) == false then best = nil end
 	if not best then
-		sound.Play(MISS_SOUND, from, 65, math.random(95, 110), 0.6)
+		sound.Play(MISS_SOUND, SKATEGM_SPACE.ToLocal(ply, from), 65, math.random(95, 110), 0.6)
 		return
 	end
 	local force = cvForce:GetFloat() * (board and P.BOARD_FORCE or 1)
 	local push = dir * force + Vector(0, 0, force * 0.35)
-	local at = BodyOf(best)
+	local at = SKATEGM_SPACE.ToLocal(best, BodyOf(best))
 	if board then
 		sound.Play(BOARD_SOUNDS[math.random(#BOARD_SOUNDS)], at, 80, math.random(95, 105), 1)
 	end

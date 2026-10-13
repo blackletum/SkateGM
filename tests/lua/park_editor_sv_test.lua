@@ -9,6 +9,11 @@ function AddCSLuaFile() end
 function IsValid(x) return x ~= nil and (type(x) ~= "table" or not x.IsValid or x:IsValid()) end
 game = { SinglePlayer = function() return false end }
 timer = { Simple = function(_, f) f() end }
+local clockT = 0
+function SysTime() clockT = clockT + 1 return clockT end
+util = setmetatable({ AddNetworkString = function() end, TableToJSON = function(t) return t end, JSONToTable = function(t) return t end }, { __index = util })
+SERVER = true
+dofile("../../addon/skategm/lua/skategm_modes/sh_modes.lua")
 
 -- net: handlers by name; a message is read back from a queue
 local handlers, queue, out = {}, {}, {}

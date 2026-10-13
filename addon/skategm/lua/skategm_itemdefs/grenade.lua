@@ -12,7 +12,7 @@ function GRENADE.Step(g, dt)
 	local next = g.pos + g.vel * dt
 	local hit = false
 	if util and util.TraceLine then
-		local tr = util.TraceLine({ start = g.pos, endpos = next, mask = MASK_SOLID_BRUSHONLY })
+		local tr = (SkateGMTraceWorld or util.TraceLine)({ start = g.pos, endpos = next, mask = MASK_SOLID_BRUSHONLY })
 		if tr.Hit then
 			local n = tr.HitNormal
 			g.vel = (g.vel - n * 2 * g.vel:Dot(n)) * 0.45

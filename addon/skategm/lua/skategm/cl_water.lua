@@ -8,7 +8,6 @@ local WATER, cvSounds = L.WATER, L.cvSounds
 ---------------------------------------------------------------------------
 S.WATER = WATER
 local SPLASH = { "ambient/water/water_splash1.wav", "ambient/water/water_splash2.wav", "ambient/water/water_splash3.wav" }
-local dryRing = {} -- recent dry, grounded spots: a fallback if the engine can't return
 
 -- S.WaterLevel (set by a map module, e.g. InfMap's flat sea): the height
 -- of water that isn't Source water, in Lua's frame, or nil
@@ -18,6 +17,9 @@ local function InWater(p)
 	local lvl = ExtraLevel(p)
 	if lvl and p.z < lvl then return true end
 	return bit.band(util.PointContents(p), CONTENTS_WATER) ~= 0
+end
+function S.InWater(p)
+	return InWater(p)
 end
 
 local function Splash(pos, loud)
@@ -43,12 +45,6 @@ function S.WaterThink(P, state, now)
 		if wet then
 			WATER.state, WATER.t = "splash", now
 			Splash(board or P.HIPS, true)
-		elseif P and P.HIPS and state and not string.find(state, "Air", 1, true) and state ~= "WipeoutGround" and RealTime() > (WATER.nextDry or 0) then
-			WATER.nextDry = RealTime() + 0.5
-			local f, b = P.TRUCK_FRONT, P.TRUCK_BACK
-			local yaw = (f and b) and math.deg(math.atan2(f.y - b.y, f.x - b.x)) or 0
-			table.insert(dryRing, 1, { pos = Vector(P.HIPS.x, P.HIPS.y, P.HIPS.z), yaw = yaw, t = now })
-			while #dryRing > 20 do table.remove(dryRing) end
 		end
 	elseif WATER.state == "splash" and now - WATER.t > 0.55 then
 		-- screen is dark: back to the checkpoint
@@ -57,13 +53,8 @@ function S.WaterThink(P, state, now)
 		if not ok then WATER.fallback = true end
 	elseif WATER.state == "returning" and now - WATER.t > 0.6 then
 		if wet or WATER.fallback then
-			-- the engine didn't take us out: use a dry spot from a few seconds ago
-			for _, d in ipairs(dryRing) do
-				if now - d.t > 1.5 and not InWater(d.pos) then
-					skategm.Activate(d.pos.x, d.pos.y, d.pos.z - 36, d.yaw)
-					break
-				end
-			end
+			-- the engine didn't take us out: the last safe spot
+			if S.rescue and S.rescue.Rescue then S.rescue.Rescue(RealTime()) end
 			WATER.fallback = false
 		end
 		WATER.state, WATER.t = "fadein", now
@@ -83,10 +74,9 @@ function S.RemoteWater(key, P)
 	local wet = P and P.HIPS and InWater(P.HIPS)
 	if wet and not remoteWet[key] then Splash(P.HIPS, false) end
 	remoteWet[key] = wet
-	local w = P and P.RIGHT_WHEELFRONT and P.LEFT_WHEELFRONT and P.RIGHT_WHEELBACK and P.LEFT_WHEELBACK
 	local hover = S.HoverWanted and S.HoverWanted(key)
 	if hover or S.wakes[key] then
-		S.WakeThink(key, hover and w and (P.RIGHT_WHEELFRONT + P.LEFT_WHEELFRONT + P.RIGHT_WHEELBACK + P.LEFT_WHEELBACK) / 4 or nil, RealTime(), P)
+		S.WakeThink(key, hover and S.WheelCentre(P) or nil, RealTime(), P)
 	end
 end
 

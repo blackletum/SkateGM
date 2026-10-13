@@ -59,7 +59,7 @@ S.HudPaint(1920, 1080, t)
 print("waiting for collision: nothing for the first few frames", boxes == 0 and "OK" or "<-- WRONG")
 S.HudPaint(1920, 1080, t + 0.3)
 local said = table.concat(texts, " | ")
-print("waiting for collision: a card says so, with its moving bar", boxes == 3 and said:find("Waiting for collision to load", 1, true) and "OK" or "<-- WRONG (" .. said .. ")")
+print("waiting for collision: a card says so, with its moving bar", boxes == 3 and said:find("Loading collision", 1, true) and "OK" or "<-- WRONG (" .. said .. ")")
 S.pose = { held = false }
 texts, boxes = {}, 0
 S.HudPaint(1920, 1080, t + 0.35)
@@ -78,4 +78,12 @@ do
 	fills = {}
 	S.PaintWait(1920, 1080, 11, 9, "Loading", "Loading the skater", false, 0.3)
 	print("... never going backwards", fills[3] and math.abs(fills[3].w - track.w * 0.5) <= 1 and "OK" or "<-- WRONG")
+	fills = {}
+	S.stream = { arrive = 5 }
+	S.PaintWait(1920, 1080, 12, 9, "Loading collision")
+	print("while a streamed map's arrival screen is up, no second loading card", #fills == 0 and "OK" or "<-- WRONG")
+	S.stream.painting = true
+	S.PaintWait(1920, 1080, 12, 9, "Loading Downtown")
+	print("... only the arrival screen's own", #fills > 0 and "OK" or "<-- WRONG")
+	S.stream = nil
 end

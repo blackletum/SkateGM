@@ -43,11 +43,13 @@ print("screen fades to dark:", maxFade >= 0.99 and "OK" or "<-- WRONG " .. maxFa
 print("then back to Skate 3's checkpoint (once):", calls.checkpoint == 1 and "OK" or "<-- WRONG " .. calls.checkpoint)
 for _ = 1, 90 do frame(10) end -- the engine put us back on dry ground
 print("fades back in and is ready again:", W.state == "dry" and W.fade == 0 and #calls.activate == 0 and "OK" or "<-- WRONG " .. W.state)
--- if the engine can't return, a recent dry spot is used instead
+-- if the engine can't return, the last safe spot (the rescue's) is used instead
+local rescued = 0
+S.rescue = { Rescue = function() rescued = rescued + 1 return true end }
 checkpointOK = false
 for _ = 1, 20 do frame(-5, "PhysicsAir") end
 for _ = 1, 120 do frame(-20, "PhysicsAir") end
-print("fallback to a recent dry spot:", #calls.activate == 1 and calls.activate[1].z >= 0 and "OK" or "<-- WRONG")
+print("fallback to the last safe spot:", rescued == 1 and "OK" or "<-- WRONG")
 
 -- markers
 S.H.events = {}

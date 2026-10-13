@@ -119,7 +119,7 @@ function C.BoardView(fov)
 	local cam = C.boardCam
 	local ball = cam and C.Ball(C.state)
 	if not ball then return cam and cam.pos and { origin = cam.pos, angles = cam.ang, fov = fov } or nil end
-	local board = ball:GetPos()
+	local board = SKATEGM_SPACE.View(ball)
 	if cam.last then
 		local moved = board - cam.last
 		moved.z = 0
@@ -174,7 +174,7 @@ C.FLY_LIFT, C.FLY_TRIES, C.FLY_SIDE, C.FLY_SIDE_STEPS = 48, 24, 96, 16
 C.FLY_BAND, C.FLY_SMOOTH, C.FLY_SAMPLES, C.FLY_SPLINE = 80, 30, 240, 8
 
 local function Trace(a, b)
-	local tr = util.TraceLine({ start = a, endpos = b, mask = MASK_SOLID_BRUSHONLY })
+	local tr = (SkateGMTraceWorld or util.TraceLine)({ start = a, endpos = b, mask = MASK_SOLID_BRUSHONLY })
 	return tr and tr.Hit and tr.HitPos or nil
 end
 
@@ -527,6 +527,6 @@ BG.mode:Host({
 	},
 	start = function(v, mode)
 		local c = v.cup and v.cup.pos
-		mode:Send({ cmd = "create", cup = c and { c.x, c.y, c.z } or nil, radius = v.cup and v.cup.scale, shotTime = v.shotTime, maxStrokes = v.maxStrokes, friction = v.friction, par = v.par, canSkate = CanSkate() })
+		mode:Send({ cmd = "create", cup = c and Vector(c.x, c.y, c.z) or nil, radius = v.cup and v.cup.scale, shotTime = v.shotTime, maxStrokes = v.maxStrokes, friction = v.friction, par = v.par, canSkate = CanSkate() })
 	end,
 })

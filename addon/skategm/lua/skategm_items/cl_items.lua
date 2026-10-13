@@ -44,6 +44,7 @@ function C.Handle(m, now)
 		local a = C.arenas[m.a]
 		if a then C.RemoveCrates(a) end
 		C.arenas[m.a] = nil
+		for e, h in pairs(C.holds) do if h.arena == m.a then C.holds[e] = nil end end
 		for _, def in pairs(ITEMS.defs or {}) do
 			if def.clear then pcall(def.clear, m.a) end
 		end
@@ -66,7 +67,7 @@ function C.Handle(m, now)
 			a.crates[m.i] = { pos = Vector(m.p[1], m.p[2], m.p[3]) }
 		end
 	elseif m.k == "hold" then
-		C.holds[m.e] = m.id and { id = m.id, uses = m.uses } or nil
+		C.holds[m.e] = m.id and { id = m.id, uses = m.uses, arena = m.a } or nil
 		if m.e == LocalPlayer():EntIndex() and m.id and C.mine ~= m.id then
 			surface.PlaySound("buttons/button9.wav")
 		end

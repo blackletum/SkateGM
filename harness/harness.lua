@@ -663,9 +663,14 @@ local function ride(r)
 			end
 		end
 		if os.getenv("SK8_WIPE_STICK") and q.bones and q.cam and s:find("Wipeout") then
-			if not WIPE or WIPE.run ~= r then WIPE = { run = r, flip = 0, roll = 0, yaw = 0, n = 0 } end
+			if not WIPE or WIPE.run ~= r then WIPE = { run = r, flip = 0, roll = 0, yaw = 0, n = 0, path = 0, ticks = 0 } end
 			local b = q.bones
 			local hips, head, ls, rs = b[bone.HIPS], b[bone.HEAD], b[bone.LEFTSHOULDER], b[bone.RIGHTSHOULDER]
+			if hips then
+				if WIPE.last then WIPE.path = WIPE.path + math.sqrt((hips[1] - WIPE.last[1]) ^ 2 + (hips[2] - WIPE.last[2]) ^ 2) end
+				WIPE.last = { hips[1], hips[2], hips[3] }
+				WIPE.ticks = WIPE.ticks + 1
+			end
 			local f = { q.cam.fwd[1], q.cam.fwd[2], 0 }
 			local fl = math.sqrt(f[1] ^ 2 + f[2] ^ 2)
 			if hips and head and ls and rs and fl > 0.1 then
@@ -815,7 +820,7 @@ local function ride(r)
 		end
 	end
 	local builds1 = skategm.Poll().builds10s or 0
-	if WIPE and WIPE.run == r then log("WIPE run %d: stick %s yaw %.0f | flip %.0f roll %.0f yaw %.0f degrees over %d ticks", r, os.getenv("SK8_WIPE_STICK"), yaw, WIPE.flip, WIPE.roll, WIPE.yaw, WIPE.n) end
+	if WIPE and WIPE.run == r then log("WIPE run %d: stick %s yaw %.0f | flip %.0f roll %.0f yaw %.0f degrees over %d ticks | slid %.0f units in %.2f s (%.0f u/s)", r, os.getenv("SK8_WIPE_STICK"), yaw, WIPE.flip, WIPE.roll, WIPE.yaw, WIPE.n, WIPE.path, WIPE.ticks / 60, WIPE.path / math.max(WIPE.ticks / 60, 1e-3)) end
 	log("run %d: %s (%s) | start %.1f %.1f %.1f yaw %.0f | rode %.0f units | %s | at %s", r, result, why, x, y, z, yaw, dist, table.concat(seq, " > "),
 		at and string.format("%.1f %.1f %.1f", at[1], at[2], at[3]) or "-")
 	if builds1 > builds0 then log("  (collision rebuilt during run %d)", r) end

@@ -2,6 +2,9 @@ import os
 import sys
 import zipfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import make_public
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DLL = os.path.join(ROOT, 'gm_skategm', 'prebuilt', 'gmcl_skategm_win64.dll')
 ADDON = os.path.join(ROOT, 'addon', 'skategm')
@@ -24,25 +27,17 @@ def main():
             z.write(os.path.join(prebuilt, name), name)
         for name in ['SDL2-LICENSE.txt', 'SDL2-README.txt', 'SDL_GameControllerDB-LICENSE.txt']:
             z.write(os.path.join(prebuilt, name), 'licenses/' + name)
-        exporter = os.path.join(ROOT, 'exporter')
-        for base, dirs, files in os.walk(exporter):
-            dirs[:] = [d for d in dirs if d != '__pycache__']
-            for name in sorted(files):
-                if name in ('import_upstream.py', 'refpack.dll'):
-                    continue
-                full = os.path.join(base, name)
-                z.write(full, os.path.relpath(full, ROOT).replace(os.sep, '/'))
-        z.write(os.path.join(ROOT, 'LICENSE'), 'LICENSE')
-        z.write(os.path.join(ROOT, 'LICENSE-THIRD-PARTY.md'), 'LICENSE-THIRD-PARTY.md')
-        z.write(os.path.join(ROOT, 'engine', 'LICENSE'), 'engine/LICENSE')
-        z.write(os.path.join(ROOT, 'engine', 'NOTICE-mashup'), 'engine/NOTICE-mashup')
-        z.write(os.path.join(ROOT, 'engine', 'README.md'), 'engine/README.md')
-        z.write(os.path.join(ROOT, 'README.md'), 'README.md')
-        for base, _, files in os.walk(ADDON):
-            for name in sorted(files):
-                full = os.path.join(base, name)
-                rel = os.path.relpath(full, os.path.dirname(ADDON)).replace(os.sep, '/')
-                z.write(full, rel)
+        files, problems = make_public.collect()
+        if problems:
+            sys.exit('not releasing, these look private: ' + '; '.join(problems))
+        singles = {'LICENSE', 'LICENSE-THIRD-PARTY.md', 'engine/LICENSE', 'engine/NOTICE-mashup', 'engine/README.md', 'README.md'}
+        for path in sorted(files):
+            if path.startswith('exporter/') and os.path.basename(path) != 'import_upstream.py':
+                z.writestr(path, files[path][0])
+            elif path in singles:
+                z.writestr(path, files[path][0])
+            elif path.startswith('addon/skategm/'):
+                z.writestr(path[len('addon/'):], files[path][0])
     print(out)
 
 

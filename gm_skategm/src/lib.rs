@@ -14,6 +14,7 @@
 //! jobs and reads the newest reply, so a slow tick never stalls the game.
 
 pub mod coords;
+mod states;
 mod engine;
 #[cfg(feature = "engine")]
 pub mod hud; // gm_sk8 addition: Skate 3's own trick display
@@ -215,9 +216,25 @@ impl Remembered {
     /// Calls f with each triangle index whose cell is within r of p (x, y);
     /// f returns false to stop early.
     fn near(&self, p: [f32; 3], r: f32, mut f: impl FnMut(usize) -> bool) {
+        if !(p[0].is_finite() && p[1].is_finite()) || r.is_nan() || r < 0.0 {
+            return;
+        }
         let (x0, x1) = (((p[0] - r) / CELL).floor() as i32, ((p[0] + r) / CELL).floor() as i32);
         let (y0, y1) = (((p[1] - r) / CELL).floor() as i32, ((p[1] + r) / CELL).floor() as i32);
         let mut seen = std::collections::HashSet::new();
+        let span = (x1 as i64 - x0 as i64 + 1) * (y1 as i64 - y0 as i64 + 1);
+        if span > self.cells.len() as i64 {
+            let mut keys: Vec<&(i32, i32)> = self.cells.keys().filter(|(x, y)| (x0..=x1).contains(x) && (y0..=y1).contains(y)).collect();
+            keys.sort();
+            for key in keys {
+                for &i in &self.cells[key] {
+                    if seen.insert(i) && !f(i as usize) {
+                        return;
+                    }
+                }
+            }
+            return;
+        }
         for x in x0..=x1 {
             for y in y0..=y1 {
                 for &i in self.cells.get(&(x, y)).map(Vec::as_slice).unwrap_or(&[]) {
@@ -571,7 +588,7 @@ fn worker(
                         d.1 = Some(c);
                         covering = None;
                     }
-                    let grinding = !cleanup::off("grinddefer") && sim.last_state().contains("Grind");
+                    let grinding = !cleanup::off("grinddefer") && states::grinding(sim.last_state());
                     if deferred.as_ref().is_some_and(|d| !grinding || d.2.elapsed() > std::time::Duration::from_secs(6)) {
                         if let Some((p, c, _)) = deferred.take() {
                             sim.install(p)?;
@@ -675,7 +692,7 @@ fn worker(
                         }
                     };
                     if let Some(p) = &pose {
-                        standing = (p.state.contains("Ground") && !p.state.contains("Wipeout"))
+                        standing = states::standing(&p.state)
                             .then(|| Vec3::from_array(coords::from_skate([p.root[12], p.root[13], p.root[14]])));
                     }
                     if let Some(p) = &pose {
@@ -768,6 +785,7 @@ fn collision_builder(
         let mut first = true;
         let mut last_fingerprint: Option<u64> = None;
         let mut last_input: Option<u64> = None;
+        let mut last_half: Option<f32> = None;
         loop {
             // wait for a request - or, if the static layer is waiting for shapes
             // to stop arriving, until it's due (then rebuild with it)
@@ -810,9 +828,9 @@ fn collision_builder(
             }
             first = false;
             let _ = replies.send(Reply::Wanted(scene.wanted()));
-            let (input, input_half) = scene.input_key(centre);
-            if last_input == Some(input) && !cleanup::off("sameskip") && !cleanup::off("inputskip") {
-                if prepared.send((None, centre, input_half)).is_err() {
+            let (input, _) = scene.input_key(centre);
+            if let (Some(half), true) = (last_half, last_input == Some(input) && !cleanup::off("sameskip") && !cleanup::off("inputskip")) {
+                if prepared.send((None, centre, half)).is_err() {
                     return Ok(());
                 }
                 continue;
@@ -820,6 +838,7 @@ fn collision_builder(
             last_input = Some(input);
             let t = Instant::now();
             let (tris, rails, st, tags) = scene.build_tagged(centre);
+            last_half = Some(st.half);
             // The same collision as the one installed: don't swap the engine's
             // world for nothing (a teleport, an unchanged entity list, a
             // position update inside the region all used to - and a swap
@@ -1049,6 +1068,13 @@ fn fail(lua: Lua, msg: &str) -> c_int {
 }
 
 /// skategm.Load(dataPath, x, y, z, yaw) -> true | false, message
+/// What one session reported about itself, cleared before the next one.
+fn reset_session_status() {
+    *BRUSH_STATUS.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *STATIC_STATUS.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    UNCOVERED_TICKS.store(0, std::sync::atomic::Ordering::Relaxed);
+}
+
 unsafe extern "C" fn load(l: State) -> c_int {
     guarded(l, |lua| {
         let Some(path) = lua.string(1) else { return fail(lua, "Load: first argument must be the data folder path") };
@@ -1057,6 +1083,7 @@ unsafe extern "C" fn load(l: State) -> c_int {
         }
         let floor = [lua.number(2, 0.0) as f32, lua.number(3, 0.0) as f32, lua.number(4, 0.0) as f32];
         let yaw = lua.number(5, 0.0) as f32;
+        reset_session_status();
         let map = lua.bytes(6);
         let world_scale = lua.number(7, 1.0) as f32;
         let smooth = lua.number(8, 1.0).clamp(0.0, 2.0) as u32;
@@ -1490,6 +1517,32 @@ unsafe extern "C" fn define_model(l: State) -> c_int {
     })
 }
 
+/// The list at stack index 1 as {model, n numbers...} entries (missing numbers
+/// are 0; entries without a model string are left out).
+fn read_entries<const N: usize>(lua: &Lua) -> Vec<(String, [f32; N])> {
+    let mut out = Vec::new();
+    for k in 1..=lua.len(1) as i32 {
+        lua.geti(1, k);
+        let e = lua.top();
+        if lua.is_table(e) {
+            lua.geti(e, 1);
+            let model = lua.string(lua.top());
+            lua.pop(1);
+            let mut v = [0.0f32; N];
+            for (j, slot) in v.iter_mut().enumerate() {
+                lua.geti(e, j as i32 + 2);
+                *slot = lua.number(lua.top(), 0.0) as f32;
+                lua.pop(1);
+            }
+            if let Some(model) = model {
+                out.push((model, v));
+            }
+        }
+        lua.pop(1);
+    }
+    out
+}
+
 /// skategm.SetEntities(list) where list = { {model, x, y, z, pitch, yaw, roll}, ... }:
 /// the solid entities near the skater right now.
 unsafe extern "C" fn set_entities(l: State) -> c_int {
@@ -1498,24 +1551,10 @@ unsafe extern "C" fn set_entities(l: State) -> c_int {
             return fail(lua, "SetEntities: expected a list");
         }
         let mut placed = Vec::new();
-        for k in 1..=lua.len(1) as i32 {
-            lua.geti(1, k);
-            let e = lua.top();
-            if lua.is_table(e) {
-                lua.geti(e, 1);
-                let model = lua.string(lua.top());
-                lua.pop(1);
-                let mut v = [0.0f32; 6];
-                for (j, slot) in v.iter_mut().enumerate() {
-                    lua.geti(e, j as i32 + 2);
-                    *slot = lua.number(lua.top(), 0.0) as f32;
-                    lua.pop(1);
-                }
-                if let Some(model) = model {
-                    placed.push(Placed { model, origin: Vec3::new(v[0], v[1], v[2]), angles: [v[3], v[4], v[5]] });
-                }
+        for (model, v) in read_entries::<6>(&lua) {
+            if v.iter().all(|x| x.is_finite()) {
+                placed.push(Placed { model, origin: Vec3::new(v[0], v[1], v[2]), angles: [v[3], v[4], v[5]] });
             }
-            lua.pop(1);
         }
         let ok = host().as_ref().is_some_and(|h| h.build.send(BuildMsg::Dynamic(placed)).is_ok());
         lua.push_bool(ok);
@@ -1536,23 +1575,11 @@ unsafe extern "C" fn set_movers(l: State) -> c_int {
         let shapes = SHAPES.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let mut tris: Vec<[[f32; 3]; 3]> = Vec::new();
         let mut carriers: Vec<Carrier> = Vec::new();
-        for k in 1..=lua.len(1) as i32 {
-            lua.geti(1, k);
-            let e = lua.top();
-            if lua.is_table(e) {
-                lua.geti(e, 1);
-                let model = lua.string(lua.top());
-                lua.pop(1);
-                // (x, y, z, pitch, yaw, roll, and optionally its velocity vx, vy,
-                // vz and how fast its angles change - yaw, pitch, roll - in
-                // degrees a second)
-                let mut v = [0.0f32; 12];
-                for (j, slot) in v.iter_mut().enumerate() {
-                    lua.geti(e, j as i32 + 2);
-                    *slot = lua.number(lua.top(), 0.0) as f32;
-                    lua.pop(1);
-                }
-                if let Some(shape) = model.and_then(|m| shapes.get(&m).cloned()) {
+        // (x, y, z, pitch, yaw, roll, and optionally its velocity vx, vy, vz
+        // and how fast its angles change - yaw, pitch, roll - in degrees a second)
+        for (model, v) in read_entries::<12>(&lua) {
+            {
+                if let Some(shape) = shapes.get(&model).cloned() {
                     let origin = Vec3::new(v[0], v[1], v[2]);
                     let r = scene::rotation([v[3], v[4], v[5]]);
                     if origin.is_finite() && tris.len() + shape.len() <= 20_000 {
@@ -1572,7 +1599,6 @@ unsafe extern "C" fn set_movers(l: State) -> c_int {
                     }
                 }
             }
-            lua.pop(1);
         }
         let n = tris.len();
         let ok = host().as_ref().is_some_and(|h| h.jobs.send(Job::Moving(tris, carriers)).is_ok());
@@ -2193,6 +2219,17 @@ unsafe extern "C" fn stop(l: State) -> c_int {
 }
 
 /// skategm.Version() -> string
+/// What the add-on can rely on: raised when a Lua-visible function is added or
+/// changes, so a Workshop add-on newer than the installed module can say so.
+const API_LEVEL: f64 = 1.0;
+
+unsafe extern "C" fn api_level(l: State) -> c_int {
+    guarded(l, |lua| {
+        lua.push_number(API_LEVEL);
+        1
+    })
+}
+
 unsafe extern "C" fn version(l: State) -> c_int {
     guarded(l, |lua| {
         lua.push_str(&format!("gm_skategm {} ({})", env!("CARGO_PKG_VERSION"), engine::ENGINE));
@@ -2258,6 +2295,7 @@ pub unsafe extern "C" fn gmod13_open(l: State) -> c_int {
         ("BrushesNear", brushes_near),
         ("ReturnToCheckpoint", return_to_checkpoint),
         ("Version", version),
+        ("ApiLevel", api_level),
         ("Preload", preload),
         ("WarmStatus", warm_status),
     ] {

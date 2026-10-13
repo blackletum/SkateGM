@@ -1,5 +1,4 @@
 import os
-import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -296,8 +295,6 @@ def compile_models(tools, qcs, report=print, workers=None):
         try:
             out = tools.run('studiomdl', ['-nop4', '-game', tools.game, qc], timeout=COLLISION_TIMEOUT if has_collision else 3600,
                             check=lambda out: 'ERROR' not in out.upper() or 'Completed' in out)
-        except subprocess.TimeoutExpired:
-            out = 'Error with convex elements'
         except ToolError as error:
             if 'IVP Failed' not in str(error) or not Path(qc).with_name(Path(qc).stem + '_phys.smd').is_file():
                 raise

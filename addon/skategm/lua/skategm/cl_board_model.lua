@@ -252,12 +252,33 @@ local function BuildMesh(tris, light)
 	mesh.End()
 	return m
 end
+-- (every colour a board is given bakes its own meshes: the least recently
+-- drawn go once there are more than this)
+local MESH_CACHE_MAX = 96
+local meshAge, meshUse, meshCount = {}, 0, 0
+local function EvictMeshes()
+	meshCount = 0
+	for _ in pairs(meshCache) do meshCount = meshCount + 1 end
+	while meshCount >= MESH_CACHE_MAX do
+		local oldest, at
+		for k in pairs(meshCache) do
+			if not at or (meshAge[k] or 0) < at then oldest, at = k, meshAge[k] or 0 end
+		end
+		local m = meshCache[oldest]
+		if m and m.Destroy then pcall(m.Destroy, m) end
+		meshCache[oldest], meshAge[oldest] = nil, nil
+		meshCount = meshCount - 1
+	end
+end
 local function CachedMesh(kind, light, col, col2, fit)
 	local level = math.Clamp(math.floor(light * 8 + 0.5), 2, 10) -- a few light levels
 	local key = kind .. level .. (col and (col.r .. "," .. col.g .. "," .. col.b) or "") .. (col2 and ("/" .. col2.r .. "," .. col2.g .. "," .. col2.b) or "")
 		.. (fit and string.format("|%.2f,%.2f", fit[1], fit[2]) or "")
+	meshUse = meshUse + 1
+	meshAge[key] = meshUse
 	local m = meshCache[key]
 	if m == nil then
+		EvictMeshes()
 		local ok, built = pcall(function()
 			local tris = kind == "deck" and DeckTriangles(col, col2) or kind == "under" and UnderTriangles(fit and fit[1], fit and fit[2]) or kind == "top" and TopTriangles(col) or kind == "rocket" and RocketTriangles() or TruckTriangles(col)
 			return BuildMesh(tris, level / 8)

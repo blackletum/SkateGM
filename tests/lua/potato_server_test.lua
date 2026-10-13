@@ -117,7 +117,7 @@ POTATO.Think(t + 200 + POTATO.COUNTDOWN)
 POTATO.Think(t + 200 + POTATO.COUNTDOWN + POTATO.SCATTER)
 t = t + 200 + POTATO.COUNTDOWN + POTATO.SCATTER
 local leaver, burn = G.holder, G.fuseAt
-leaver.gone = true
+POTATO.mode.leaveHandler(leaver) leaver.gone = true
 POTATO.Think(t + 1)
 check("the holder disconnects: the bomb jumps to someone still in", G.holder ~= nil and G.holder ~= leaver and G.fuseAt == burn)
 -- dropping out of Skate 3 mode with it doesn't save you

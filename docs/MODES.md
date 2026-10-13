@@ -84,12 +84,118 @@ mode:SendState(ply, stateTable)         -- to one player (default: the last stat
 
 Check `mode:Allowed()` in your command handler before starting anything. The
 server has no physics of its own for skaters: the skating happens on each
-client. `SKATEGM_MODES.API()` on the server is `SkateGM.API`:
+client. `mode:Serve(S, handlers, stop)` is the thin version of that: it routes
+`{ cmd = ... }` to `handlers[cmd](ply, msg, now)`, refuses everything but
+`leave` while the mode is turned off, calls `stop(why)` when it's turned off
+mid-game, and returns the command function. `SKATEGM_MODES.API()` on the server
+is `SkateGM.API`:
 
 | | |
 |---|---|
 | `IsSkating(ply)` | the player is in Skater mode |
 | `Allowed(ply)` | the player may use Skater mode on this server (`skategm_allow`) |
+
+### The game builder: `SKATEGM_MODES.Game`
+
+Most minigames are the same game underneath: a host opens a lobby, players
+join, the host starts, it's played, the results show, then back to the
+lobby. `SKATEGM_MODES.Game(MYMODE, spec)` (server, `skategm_modes/sv_game.lua`)
+is all of that, and every built-in mode uses it; you write only what's your
+own. It sets `MYMODE.session` (the game's table, `S` below),
+`MYMODE.Command(ply, msg, now)` (for tests), `MYMODE.Tick(now)`,
+`MYMODE.Broadcast`, `MYMODE.Stop`, `MYMODE.ToLobby`, `MYMODE.Remove`,
+`MYMODE.Next`, and returns `G` with the same and more.
+
+```lua
+if not SKATEGM_MODES.Game then include("skategm_modes/sv_game.lua") end
+local G
+G = SKATEGM_MODES.Game(MYMODE, {
+	minPlayers = 2,
+	entry = function(ply, S) return { score = 0 } end,         -- each player's entry
+	resetEntry = function(e) e.score = 0 end,                  -- back in the lobby
+	publicPlayer = function(ply, e, S) return { score = e.score } end,
+	public = function(S, t, now) t.spot = S.spot end,          -- your fields in the state
+	create = function(S, ply, msg, now)                        -- after the lobby is set up
+		S.spot = SKATEGM_MODES.HostStart(ply, msg)
+		-- return "why" to refuse (told to the host), or true to refuse quietly
+	end,
+	begin = function(S, now)                                   -- the host pressed Start
+		S.phase, S.deadline = "playing", now + 60
+		G.Broadcast(now)
+	end,
+	tick = { playing = function(S, now) if now > S.deadline then G.Results(now) end end },
+	results = function(S, now)                                 -- set your winner fields,
+		S.winner = "..."                                   -- return what the game hears
+		return "someone wins"
+	end,
+	handlers = { score = function(ply, msg, now) end },        -- your own commands
+})
+```
+
+What it does: `S` holds `phase`, `host`, `players` (entities) and `entries`
+(keyed by `SKATEGM_MODES.Key(ply)`, the UserID, so an entry outlives a
+disconnect), and `deadline` (`CurTime()` based). The commands `create`, `join`,
+`leave`, `begin` (host only, lobby only, `minPlayers`), `stop` (host or admin:
+from the lobby it closes, otherwise back to the lobby; `close = true` always
+closes) and, for turn games, `ready`. Leaving (a command, or disconnecting) takes
+the player out, hands the host on (one message to the game), and stops the game
+when nobody's left. The public state always has `phase`, `host` (entity index),
+`timeLeft` (from `deadline`) and `players` (`{ ent, name }` plus your
+`publicPlayer` fields). Results stay up for `MYMODE.RESULTS` seconds (8 by
+default), then the lobby. Messages: `G.TellGame(text)` reaches only the game's
+players and host, `G.Tell(ply, text)` one player; only "X is hosting ..." goes to
+the whole server.
+
+Other spec fields:
+
+| field | |
+|---|---|
+| `title` | the name in messages (default: the mode's title) |
+| `maxPlayers` | joins refused past this |
+| `needSkate = false` | hosting and joining need only `Allowed(ply)`, not a working Skater mode (`msg.canSkate`) |
+| `canJoin(S, ply, msg)` | return a reason to refuse a join (default: only in the lobby) |
+| `joined(S, ply, now)`, `joinedText(S, ply)` | after someone joins; extra words for "X joined" |
+| `openText`, `noGameText`, `leaveText`, `hosting(S, ply)` | wording |
+| `keepLeft(S, ply)` | true: a leaver's entry stays (with `left = true`) until the lobby |
+| `leaving(S, ply, now)` | before someone is taken out (the entry is still there) |
+| `removed(S, ply, now, wasActive)` | after; return true when you've moved the game on yourself |
+| `minPlaying` | while playing, fewer players than this stops the game |
+| `lobby(S, now)` | clear your fields on the way back to the lobby |
+| `stop(S, now)` | clean up (props) when the game closes |
+| `resultsPhase`, `resultsTime`, `afterResults = "stop"` | e.g. `"final"` that closes instead of returning to the lobby |
+| `tick[phase](S, now)` | your phases; `tick.results` replaces the built-in results clock |
+| `think(S, now)` | every tick while the game exists (e.g. `ITEMS.server.Sync`) |
+| `offSkate = { during, seconds, action, each, skip }` | leaving Skater mode in those phases calls `action(S, ply, now)` after `seconds` (1; 0 = at once): the active player in a turn game, every player with `each` (`skip(S, ply, entry)` to leave some out) |
+| `refresh = { during, every }` | broadcast again every `every` seconds in those phases (for fields that change with time; `timeLeft` is aged for you) |
+| `freeze` | `false`: never freeze anyone; a function `(S, ply)` -> frozen |
+
+`G.Results(now, ...)` (extra arguments go to `results`; return a list of lines
+for more than one), `G.Stop(why, now)`, `G.ToLobby(now)`, `G.Broadcast(now)`,
+`G.Entry(ply)`, `G.IndexOf(ply)`, `G.Host(ply)`, `G.Name(ply)`, `G.Ent(ply)`,
+`G.Members()`.
+
+Turn games add `turns`: the host's Start makes `S.order` (a copy of the players;
+`shared = true` uses `S.players` itself, so late joiners get a turn), then each
+player in turn goes `prep` (getting to the start, frozen others watching; their
+client sends `ready`) -> `countdown` -> your live phases -> `between`. When a
+player leaves, the order and its index are fixed up so nobody's turn is skipped.
+
+| `turns.` | |
+|---|---|
+| `live = { "turn" }` | your live phases; the countdown goes into the first, for `time(S)` seconds (default `S.time`) |
+| `skip(S, ply, now)` | they didn't get to the start in time (`MYMODE.PREP_TIMEOUT`); `skipText` is what the game hears after their name |
+| `start(S, ply, now)`, `go(S, now)` | a turn's prep starts; its live part starts |
+| `left(S, ply, name, why, now)` | the active player left (default: a second's `between`); return true when you've moved on yourself |
+| `S.rounds` | rounds through the order; `newRound(S, now)` before each; none (`single = true`): `done(S, now)` after the last turn, else results |
+| `pick(S, now)` | choose who's next yourself (nil: results) instead of the order |
+| `keepOrder`, `nextUp = false`, `lobbyRound` | don't touch `S.order` on leaves; no `nextUp` in the state; the round number in the lobby |
+
+`G.EndTurn(now, seconds)` ends the active player's turn (`between`, then the
+next). `MYMODE.PREP_TIMEOUT`, `COUNTDOWN` and `BETWEEN` set the times. The
+public state gains `active`, `nextUp`, `round` and `rounds`, and everyone but
+the active player is frozen while the game is played. Bullseye
+(`skategm_bullseye/sv_bullseye.lua`) is a short turn game to start from; Hot
+Potato (`skategm_potato`) a real-time one.
 
 ## Client
 

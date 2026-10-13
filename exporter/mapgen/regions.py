@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 
-PREFIX = 'sgm_skate3_'
+from . import games
+
+PREFIX = games.SKATE3.prefix
 LITE = (0.4, 2, 6.0)
 
 
@@ -22,10 +24,11 @@ class Region:
     light_detail: tuple = ()
     vertex_lighting: bool = True
     extra: dict = field(default_factory=dict)
+    game: str = 'skate3'
 
     @property
     def map_name(self):
-        return PREFIX + self.name
+        return games.get(self.game).prefix + self.name
 
 
 REGIONS = [
@@ -50,8 +53,11 @@ REGIONS = [
 
 
 def by_name(name):
-    name = name.removeprefix(PREFIX).removeprefix('sgm_')
     for region in REGIONS:
-        if region.name == name:
+        if name in (region.map_name, region.name):
+            return region
+    short = name.removeprefix('sgm_')
+    for region in REGIONS:
+        if region.map_name.removeprefix('sgm_') == short:
             return region
     raise KeyError('no region named ' + name)

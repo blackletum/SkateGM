@@ -132,7 +132,7 @@ local function PopPos(ent)
 	if not IsValid(ply) then return nil end
 	local P2 = a and a.PoseOf and a.PoseOf(ply)
 	if P2 and P2.HIPS then return P2.HIPS + Vector(0, 0, 40) end
-	return ply:GetPos() + Vector(0, 0, 80)
+	return SKATEGM_SPACE.View(ply) + Vector(0, 0, 80)
 end
 
 function P.PaintPops(w, h, now)

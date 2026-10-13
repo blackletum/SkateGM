@@ -1,7 +1,11 @@
+import io
 import json
 import os
+import re
 import struct
 import sys
+import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -11,7 +15,7 @@ from .mathutil import norm
 
 from . import MAP_TOOLS
 
-CHANNELS = ('diffuse', 'normal', 'specular', 'lightmap', 'detail', 'transparent', 'decal')
+CHANNELS = ('diffuse', 'normal', 'specular', 'lightmap', 'detail', 'transparent', 'decal', 'chromaticity')
 
 
 @dataclass
@@ -48,6 +52,7 @@ class Mesh:
     name: str = ''
     decal_uvs: np.ndarray = None
     scenery: bool = False
+    lightmap_channel: int = None
 
 
 # A collision triangle's "surface" (uint64): the retail surface ID in the low
@@ -164,16 +169,55 @@ def mesh_from(entry, arrays, key):
                 None if decal is None else np.asarray(decal, np.float32))
 
 
+_NPY_HEADER = re.compile(r"'descr':\s*'([^']+)',\s*'fortran_order':\s*(True|False),\s*'shape':\s*\(([^)]*)\)")
+
+
+def read_npz(path):
+    out = {}
+    with zipfile.ZipFile(path) as zf:
+        for info in zf.infolist():
+            data = zf.read(info)
+            name = info.filename[:-4] if info.filename.endswith('.npy') else info.filename
+            major = data[6] if data[1:6] == b'NUMPY' and data[0] == 0x93 else 0
+            if major not in (1, 2, 3):
+                out[name] = np.load(io.BytesIO(data), allow_pickle=False)
+                continue
+            if major == 1:
+                hlen, start = struct.unpack_from('<H', data, 8)[0], 10
+            else:
+                hlen, start = struct.unpack_from('<I', data, 8)[0], 12
+            m = _NPY_HEADER.search(data[start:start + hlen].decode('latin1'))
+            if not m or m.group(2) == 'True':
+                out[name] = np.load(io.BytesIO(data), allow_pickle=False)
+                continue
+            shape = tuple(int(v) for v in m.group(3).replace(' ', '').split(',') if v)
+            dtype = np.dtype(m.group(1))
+            if dtype.hasobject:
+                out[name] = np.load(io.BytesIO(data), allow_pickle=False)
+                continue
+            out[name] = np.frombuffer(data, dtype, int(np.prod(shape)), start + hlen).reshape(shape).copy()
+    return out
+
+
 def _materials_and_meshes(root, manifest, textures):
     materials, meshes = {}, []
-    for model in manifest['models']:
-        npz = np.load(root / model['npz'])
-        arrays = {k: npz[k] for k in npz.files}
-        for entry in model['meshes']:
-            mesh = mesh_from(entry, arrays, material_for(entry, textures, materials))
-            if mesh is not None:
-                meshes.append(mesh)
+    channels_path = Path(root) / 'lightmap_channels.json'
+    channels = json.loads(channels_path.read_text(encoding='utf-8')) if channels_path.is_file() else {}
+    models = manifest['models']
+    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 4)) as pool:
+        loaded = pool.map(lambda m: read_npz(root / m['npz']), models)
+        for model, arrays in zip(models, loaded):
+            _add_model(model, arrays, textures, materials, meshes, channels)
     return materials, meshes
+
+
+def _add_model(model, arrays, textures, materials, meshes, channels):
+    asset = str(model.get('asset_id', '')).lower()
+    for entry in model['meshes']:
+        mesh = mesh_from(entry, arrays, material_for(entry, textures, materials))
+        if mesh is not None:
+            mesh.lightmap_channel = channels.get(f'{asset}:{int(entry["index"])}')
+            meshes.append(mesh)
 
 
 def _decode_vertices_fixed(cluster, vertex_count, compression, granularity, vertex_data_end):

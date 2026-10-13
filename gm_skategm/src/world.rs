@@ -221,8 +221,8 @@ fn authored_world(a: crate::authored::Authored, opts: Smoothing) -> World {
     crate::engine::set_native_rails(natives);
     crate::engine::set_native_triangles(crate::authored::native_triangles(&a));
     World {
-        base_tris: a.triangles.clone(),
-        base_tags: vec![TAG_BRUSH; n],
+        base_tris: Vec::new(),
+        base_tags: Vec::new(),
         triangles: a.triangles,
         tags: vec![TAG_BRUSH; n],
         rails: a.rails,
@@ -272,12 +272,12 @@ pub fn from_bsp_with(bytes: &[u8], smooth: u32) -> Result<World, String> {
 
 pub fn from_bsp_opts(bytes: &[u8], opts: Smoothing) -> Result<World, String> {
     let smooth = opts.terrain;
+    crate::engine::set_native_rails(Vec::new());
+    crate::engine::set_native_triangles(std::iter::empty());
     let bsp = vbsp::Bsp::read(bytes).map_err(|e| format!("could not read the map: {e}"))?;
     if let Some(authored) = crate::authored::from_pack(&bsp) {
         return authored.map(|a| authored_world(a, opts));
     }
-    crate::engine::set_native_rails(Vec::new());
-    crate::engine::set_native_triangles(Vec::new());
     let leaves = leaves_in_order(bytes)?;
     if leaves.len() != bsp.leaves.len() {
         return Err(format!("leaf count mismatch ({} vs {})", leaves.len(), bsp.leaves.len()));

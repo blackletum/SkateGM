@@ -1,4 +1,7 @@
-for _, f in ipairs({ "sound", "hud", "marker", "water", "why", "trace", "board_model", "settings", "replay", "replay_cam", "replay_fx", "replay_export", "infmap", "keyboard", "presentation", "retarget", "retarget_math", "flickit_hud", "boundary", "nametags", "replay_loop", "hud_original", "skate3_music", "rumble" }) do AddCSLuaFile("skategm/cl_" .. f .. ".lua") end
+for _, f in ipairs({ "sound", "hud", "marker", "water", "why", "trace", "board_model", "settings", "replay", "replay_cam", "replay_fx", "replay_export", "infmap", "keyboard", "presentation", "retarget", "retarget_math", "flickit_hud", "boundary", "nametags", "replay_loop", "hud_original", "skate3_music", "rumble", "stream", "cells", "rescue" }) do AddCSLuaFile("skategm/cl_" .. f .. ".lua") end
+AddCSLuaFile("skategm/sh_space.lua")
+AddCSLuaFile("skategm/sh_cells.lua")
+include("skategm/sh_space.lua")
 -- Server half of SkateGM. The skate simulation runs on the client
 -- (gm_skategm); the server only hides the real player, keeps it following the
 -- skater (so the world around them stays networked), and puts them back on
@@ -53,8 +56,15 @@ local function Enter(ply)
 	ply:SetLocalVelocity(vector_origin)
 end
 
+SKATEGM_HIPS_FRESH = 2
+function SkateGMSkaterAbs(ply)
+	if ply.SkateGM and ply.SkateGMHips and SysTime() - (ply.SkateGMPoseAt or 0) < SKATEGM_HIPS_FRESH then return ply.SkateGMHips end
+	return SKATEGM_SPACE.Abs(ply)
+end
+
 local function Leave(ply, pos, yaw)
 	ply.SkateGM = false
+	ply.SkateGMHips, ply.SkateGMPoseAt = nil, nil
 	ply:SetNW2Bool("SkateGMSkating", false)
 	net.Start("skategm_off")
 	net.WriteEntity(ply)
@@ -64,7 +74,7 @@ local function Leave(ply, pos, yaw)
 	ply:SetNotSolid(false)
 	ply:DrawShadow(true)
 	ply:DrawWorldModel(true)
-	if pos then ply:SetPos(Unstuck(ply, pos)) end
+	if pos then ply:SetPos(Unstuck(ply, SkateGMLocal(ply, pos))) end
 	ply:SetLocalVelocity(vector_origin)
 	if yaw then ply:SetEyeAngles(Angle(0, yaw, 0)) end
 	-- give the weapon back
@@ -89,12 +99,17 @@ net.Receive("skategm_state", function(_, ply)
 	end
 end)
 
+-- Streamed maps (skategm_stream/<map>/): the world is bigger than Source
+-- allows, so each player sits in a cell; their client sees positions relative
+-- to it (NW2 SkateGMFrame) and sends absolute ones. SkateGMStreamed,
+-- SkateGMFrame, SkateGMAbsPos and SkateGMLocal are in skategm/sh_space.lua.
+
 net.Receive("skategm_pos", function(_, ply)
 	if not (IsValid(ply) and ply.SkateGM) then return end
 	local pos = Vector(net.ReadFloat(), net.ReadFloat(), net.ReadFloat())
-	local limit = InfMap2 and 2 ^ 31 or 65536
+	local limit = (InfMap2 or SkateGMStreamed()) and 2 ^ 31 or 65536
 	if pos.x == pos.x and pos.y == pos.y and pos.z == pos.z and math.abs(pos.x) < limit and math.abs(pos.y) < limit and math.abs(pos.z) < limit then
-		ply:SetPos(pos)
+		ply:SetPos(SkateGMLocal(ply, pos))
 	end
 end)
 
@@ -123,7 +138,8 @@ end)
 
 hook.Add("EntityKeyValue", "skategm_map_info", function(ent, key, value)
 	if key == "skategm_boundary" then SetGlobal2String("SkateGMBoundary", value)
-	elseif key == "skategm_title" then SetGlobal2String("SkateGMTitle", value) end
+	elseif key == "skategm_title" then SetGlobal2String("SkateGMTitle", value)
+	elseif key == "skategm_stream" then SetGlobal2String("SkateGMStream", value) end
 end)
 
 hook.Add("PlayerDisconnected", "skategm", function(ply)
@@ -136,7 +152,14 @@ end)
 
 -- never leave anyone stuck invisible
 hook.Add("PlayerDeath", "skategm", function(ply) if ply.SkateGM then Leave(ply) end end)
-hook.Add("PlayerSpawn", "skategm", function(ply) if ply.SkateGM then Leave(ply) end end)
+hook.Add("PlayerSpawn", "skategm", function(ply)
+	ply:SetNW2Vector("SkateGMFrame", vector_origin)
+	if SKATEGM_CELLS and SKATEGM_CELLS.On() then
+		SKATEGM_CELLS.SetCell(ply, vector_origin)
+		SKATEGM_CELLS.PlayerShifted(ply)
+	end
+	if ply.SkateGM then Leave(ply) end
+end)
 hook.Add("PlayerNoClip", "skategm", function(ply) if ply.SkateGM then return false end end)
 hook.Add("PlayerSwitchWeapon", "skategm", function(ply) if ply.SkateGM then return true end end)
 hook.Add("PlayerCanPickupWeapon", "skategm", function(ply) if ply.SkateGM then return false end end)
@@ -239,6 +262,29 @@ net.Receive("skategm_hidden", function(len, ply)
 	ply:SetNW2Bool("SkateGMHidden", net.ReadBool())
 end)
 
+-- streamed maps: respawn in the district you're in (its own spawn)
+local streamIndex
+local function StreamDistricts()
+	if streamIndex == nil then
+		local txt = file.Read("skategm_stream/" .. game.GetMap() .. "/index.json", "GAME")
+		streamIndex = txt and util.JSONToTable(txt) or false
+	end
+	return streamIndex and streamIndex.districts or nil
+end
+
+function SkateGM.StreamRespawn(ply)
+	if not SkateGMStreamed() then return end
+	local list = StreamDistricts()
+	local at = SkateGMSkaterAbs(ply)
+	local best, bestD
+	for _, d in ipairs(list or {}) do
+		local cx, cy = (d.lo[1] + d.hi[1]) / 2, (d.lo[2] + d.hi[2]) / 2
+		local dist = (at.x - cx) ^ 2 + (at.y - cy) ^ 2
+		if not bestD or dist < bestD then best, bestD = d, dist end
+	end
+	if best and best.spawn then return Vector(best.spawn[1], best.spawn[2], best.spawn[3]), best.heading or 0 end
+end
+
 net.Receive("skategm_respawn", function(len, ply)
 	if not IsValid(ply) then return end
 	local now = SysTime()
@@ -246,6 +292,7 @@ net.Receive("skategm_respawn", function(len, ply)
 	ply.SkateGMRespawnAt = now
 	if hook.Run("SkateGMCanRespawn", ply) == false then return end
 	local pos, yaw = hook.Run("SkateGMRespawnPoint", ply)
+	if not pos then pos, yaw = SkateGM.StreamRespawn(ply) end
 	if not pos then pos, yaw = SkateGM.SpawnFor(ply) end
 	if not pos then return end
 	net.Start("skategm_respawn")
@@ -269,3 +316,16 @@ net.Receive("skategm_model", function(_, ply)
 	SkateGM.ApplyPlayerModel(ply, CurTime())
 end)
 include("skategm/sv_infmap.lua")
+include("skategm/sh_cells.lua")
+include("skategm/sv_cells.lua")
+include("skategm/sv_wheels.lua")
+
+util.AddNetworkString("skategm_admin_cvar")
+net.Receive("skategm_admin_cvar", function(len, ply)
+	if not IsValid(ply) or not (ply:IsAdmin() or (ply.IsListenServerHost and ply:IsListenServerHost())) then return end
+	local name, value = net.ReadString(), net.ReadString()
+	if name:sub(1, 8) ~= "skategm_" or #value > 64 then return end
+	local c = GetConVar(name)
+	if not c or not c:IsFlagSet(FCVAR_REPLICATED) then return end
+	c:SetString(value)
+end)

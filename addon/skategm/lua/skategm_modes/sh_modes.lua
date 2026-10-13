@@ -1,3 +1,4 @@
+if not SKATEGM_SPACE then include("skategm/sh_space.lua") end
 SKATEGM_MODES = SKATEGM_MODES or { modes = {}, VERSION = 1 }
 local M = SKATEGM_MODES
 M.modes = M.modes or {}
@@ -117,17 +118,34 @@ function M.Num(v, limit)
 	return v
 end
 -- { x, y, z } from a message (inside the map), or nil
-function M.Vec(t)
-	if type(t) ~= "table" then return nil end
-	local x, y, z = M.Num(t[1]), M.Num(t[2]), M.Num(t[3])
+-- a Vector off the wire, only if it's a real place (no NaN, no infinity, not
+-- absurdly far)
+M.FAR = 2 ^ 31
+function M.FiniteVec(v)
+	if not v then return nil end
+	local x, y, z = v.x or v[1], v.y or v[2], v.z or v[3]
 	if not (x and y and z) then return nil end
-	return { x, y, z }
+	if x ~= x or y ~= y or z ~= z or math.abs(x) > M.FAR or math.abs(y) > M.FAR or math.abs(z) > M.FAR then return nil end
+	return v
+end
+
+local vecMeta = Vector and getmetatable(Vector(0, 0, 0))
+function M.IsVec(v) return (isvector and isvector(v)) or (vecMeta ~= nil and getmetatable(v) == vecMeta) end
+function M.Vec(t)
+	if type(t) ~= "table" and not M.IsVec(t) then return nil end
+	local x, y, z = M.Num(t[1], M.FAR), M.Num(t[2], M.FAR), M.Num(t[3], M.FAR)
+	if not (x and y and z) then return nil end
+	return Vector(x, y, z)
 end
 -- a player's key for a game's tables: their UserID (it outlives a rejoin's entity)
+M.keyOf = M.keyOf or setmetatable({}, { __mode = "k" })
 function M.Key(ply, keys)
-	local k = keys and keys[ply]
+	local k = keys and keys[ply] or M.keyOf[ply]
 	if k then return k end
-	return tostring(ply:UserID())
+	if not IsValid(ply) then return "gone:" .. tostring(ply) end
+	k = tostring(ply:UserID())
+	M.keyOf[ply] = k
+	return k
 end
 -- a setting's cleaner: a whole number from lo to hi, default when missing
 function M.Clamper(lo, hi, default)
@@ -146,39 +164,14 @@ function M.Clock(t)
 end
 
 
--- the walkable surface at (x, y) closest in height to ref: every surface down a
--- vertical line through world and props (hills, ramps, a floor under a roof),
--- not just brushes, so props-made maps get it right
-M.GROUND_SPAN, M.GROUND_STEPS = 1536, 16
+-- the walkable surface at (x, y) closest in height to ref (SPACE.Ground), in
+-- the frame mode positions are in: absolute on the server, my view on clients
 function M.Ground(x, y, ref)
-	if not (util and util.TraceLine) then return ref end
-	local best, bestGap
-	local function down(from, bottom)
-		local z = from
-		for _ = 1, M.GROUND_STEPS do
-			if z <= bottom then return end
-			local tr = util.TraceLine({ start = Vector(x, y, z), endpos = Vector(x, y, bottom), mask = MASK_PLAYERSOLID })
-			if not tr.Hit or tr.HitSky then return end
-			if tr.StartSolid then
-				-- inside a brush (a roof, a wall top): carry on from where the trace left it
-				local left = tr.FractionLeftSolid or 0
-				if left <= 0 or left >= 1 then return end
-				z = z - (z - bottom) * left - 1
-			else
-				local hz = tr.HitPos.z
-				if tr.HitNormal and tr.HitNormal.z > 0.5 then
-					local gap = math.abs(hz - ref)
-					if not bestGap or gap < bestGap then best, bestGap = hz, gap end
-				end
-				z = hz - 8
-			end
-		end
-	end
-	-- just over the height asked about first (the usual case: the floor is
-	-- right under it), then from high up for hills and floors above
-	down(ref + 72, ref - M.GROUND_SPAN)
-	if not bestGap or bestGap > 72 then down(ref + M.GROUND_SPAN, ref - M.GROUND_SPAN) end
-	return best or ref
+	local SPACE = SKATEGM_SPACE
+	local p = Vector(x, y, ref)
+	local abs = CLIENT and SPACE.FromView(p) or p
+	local z = SPACE.Ground(abs)
+	return z + (ref - abs.z)
 end
 
 local function SegDist(p, a, b)
@@ -233,7 +226,7 @@ if SERVER then
 	function M.HostStart(ply, m)
 		local s = M.CleanStart(type(m) == "table" and m._start or nil)
 		if s then return Vector(s.pos[1], s.pos[2], s.pos[3]), s.yaw end
-		return ply:GetPos(), ply:EyeAngles().y
+		return SkateGMAbsPos and SkateGMAbsPos(ply) or ply:GetPos(), ply:EyeAngles().y
 	end
 
 	-- LB + X during a game: where the game says (mode:RespawnAt), or not at all
@@ -338,6 +331,17 @@ if SERVER then
 				if st.host == (IsValid(ply) and ply:EntIndex()) then return mode, true end
 			end
 		end
+	end
+
+	-- run fn in the game ply is in (nothing when they're in none of this mode's)
+	function Mode:ForPlayer(ply, fn)
+		if not self.live then return fn() end
+		local key = self:SessionOf(ply)
+		if key == nil then return end
+		self:Enter(key)
+		local a, b = fn(key)
+		self:Settle()
+		return a, b
 	end
 
 	-- run fn once for each game (fn sees that game in the mode's table)
@@ -455,9 +459,6 @@ if SERVER then
 		end
 		self:OnCommand(function(ply, m) Command(ply, m) end)
 		self:OnDisallowed(function() if S.phase ~= "idle" then stop(mode.title .. " was turned off on this server") end end)
-		self:OnPlayerJoin(function(ply)
-			if S.phase ~= "idle" then timer.Simple(3, function() if IsValid(ply) then broadcast() end end) end
-		end)
 		return Command
 	end
 
@@ -563,9 +564,7 @@ else
 	-- tables with x / y / z numbers, flat x, y, z lists under "p".
 	M.POINT_KEYS = { pos = true, centre = true, center = true, start = true, finish = true, spot = true, area = true, target = true }
 	M.FLAT_KEYS = { p = true }
-	local vecMeta = getmetatable(Vector(0, 0, 0))
-	local function IsVec(v) return (isvector and isvector(v)) or (vecMeta ~= nil and getmetatable(v) == vecMeta) end
-	M.IsVec = IsVec
+	local IsVec = M.IsVec
 	local function Num3(t) return type(t[1]) == "number" and type(t[2]) == "number" and type(t[3]) == "number" end
 	function M.ShiftPositions(t, o, depth)
 		if type(t) ~= "table" or (depth or 0) > 8 then return t end
@@ -605,19 +604,13 @@ else
 	-- Modes that keep positions of their own (a trail, a path) hear by how
 	-- much the frame moved, in mode:OnFrameShift(function(delta) ... end):
 	-- a position kept in my frame becomes p - delta.
-	function M.FrameThink(now)
-		local o = M.FrameOffset()
-		local key = o and string.format("%d %d %d", o.x, o.y, o.z) or ""
-		if key == (M.lastFrame or "") then return end
-		local before = M.lastFrameOffset
-		M.lastFrame, M.lastFrameOffset = key, o
-		local delta = before and o and (o - before) or nil
+	function M.FrameShifted(delta, now)
 		for _, mode in pairs(M.modes or {}) do
-			if delta and mode.frameShiftHandler then mode.frameShiftHandler(delta) end
+			if mode.frameShiftHandler then mode.frameShiftHandler(delta) end
 			for _, text in pairs(mode.texts or {}) do mode:HandleState(text, now) end
 		end
 	end
-	if hook and hook.Add then hook.Add("Think", "skategm_modes_frame", function() M.FrameThink(RealTime()) end) end
+	if hook and hook.Add then hook.Add("SkateGMFrameShifted", "skategm_modes_frame", function(delta) M.FrameShifted(delta, RealTime()) end) end
 
 	function M.ToAbs(t) local o = M.FrameOffset() if not o then return t end return M.ShiftPositions(t, o) end
 	function M.FromAbs(t) local o = M.FrameOffset() if not o then return t end return M.ShiftPositions(t, -o) end
@@ -632,7 +625,7 @@ else
 			self.pendingStart = nil
 			cmd._start = { pos = { s.pos.x, s.pos.y, s.pos.z }, yaw = s.yaw, placed = s.placed or nil }
 			if s.placed then
-				if type(cmd.pos) == "table" then cmd.pos = { s.pos.x, s.pos.y, s.pos.z } end
+				if type(cmd.pos) == "table" or IsVec(cmd.pos) then cmd.pos = { s.pos.x, s.pos.y, s.pos.z } end
 				if cmd.x ~= nil and cmd.y ~= nil and cmd.z ~= nil then cmd.x, cmd.y, cmd.z = s.pos.x, s.pos.y, s.pos.z end
 				if cmd.yaw ~= nil then cmd.yaw = s.yaw end
 			end
@@ -656,7 +649,7 @@ else
 	function Mode:HandleState(text, now)
 		local st = Decode(text)
 		if not st then return false end
-		-- (kept as sent: re-read when my frame moves, M.FrameThink)
+		-- (kept as sent: re-read when my frame moves, M.FrameShifted)
 		self.texts = self.texts or {}
 		self.texts[st.session or "only"] = st.phase ~= "idle" and text or nil
 		st = M.FromAbs(st)
@@ -913,6 +906,7 @@ else
 		local a = M.API()
 		if not a then return end
 		if a.IsLocked and a.IsLocked() then
+			if self.watching and a.HeldBy and not a.HeldBy(self.id .. "_watch") then self.watching = nil end
 			if watching and not self.watching then
 				self.watching = true
 				if a.Freeze then a.Freeze(true, self.id .. "_watch") end
@@ -1274,6 +1268,7 @@ else
 		local a = M.API()
 		if not a then return end
 		if holding and pos then
+			if self.holdPlaced and a.HeldBy and not a.HeldBy(self.id .. "_hold") then self.holdPlaced = nil end
 			if not self.holdPlaced and now >= (self.nextHoldTry or 0) then
 				self.nextHoldTry = now + 0.3
 				if a.TeleportTo(pos, yaw) then
@@ -1314,7 +1309,9 @@ else
 	-- kept from it, whether or not there's anyone to watch
 	function Mode:Wait(waiting)
 		local a = M.API()
-		if not a or (waiting or false) == (self.waiting or false) then return end
+		if not a then return end
+		local lost = waiting and self.waiting and a.HeldBy and not a.HeldBy(self.id .. "_wait")
+		if not lost and (waiting or false) == (self.waiting or false) then return end
 		self.waiting = waiting or nil
 		if a.Freeze then a.Freeze(waiting, self.id .. "_wait") end
 		if a.BlockInput then a.BlockInput(waiting, self.id .. "_wait") end
@@ -1354,7 +1351,7 @@ else
 		end
 		for _, why in ipairs(M.SWEPT) do if a.ReleaseHolds then a.ReleaseHolds(why) end end
 		local SP = M.spectate
-		if SP and SP.on and SP.Stop then SP.Stop() end
+		if SP and SP.on and SP.Stop and type(SP.owner) == "table" and M.modes[SP.owner.id] == SP.owner then SP.Stop() end
 	end
 	-- holds that aren't a mode's but only make sense in a game (items)
 	M.SWEPT = { "items" }
@@ -1364,13 +1361,6 @@ else
 	function Mode:JoinInfo(fn) self.joinInfoFn = fn end
 	function Mode:HostActions(fn) self.hostActionsFn = fn end
 	function Mode:OnJoin(fn) self.joinFn = fn end
-
-	function Mode:SendSequence(list)
-		local mode = self
-		for i, cmd in ipairs(list) do
-			if i == 1 then mode:Send(cmd) else timer.Simple((i - 1) * 0.12, function() mode:Send(cmd) end) end
-		end
-	end
 
 	function Mode:Info() return self:InfoFor(self.state or {}) end
 

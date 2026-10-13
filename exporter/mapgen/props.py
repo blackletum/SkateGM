@@ -45,11 +45,13 @@ def _imports():
 def catalog(source, work, report=print):
     _imports()
     from tools.asset_pipeline import dynamic_props
-    work = Path(work)
+    work = source.scope(work)
     path = work / 'catalog.json'
     if not path.is_file():
         report('reading the movable objects')
-        archive = source.file('data/content/worlddmo.big')
+        if not source.game.dmo:
+            raise FileNotFoundError(f'{source.game.title} has no movable objects catalog here')
+        archive = source.file(source.game.dmo)
         game_root = Path(str(archive)).parents[2]
         dynamic_props.prepare_catalog(game_root, work)
     return dynamic_props.load_catalog(path)

@@ -123,8 +123,14 @@ pub(crate) fn orthonormalize(source: AnimationPartTransform) -> AnimationPartTra
                 *value -= result[prior][lane] * projection;
             }
         }
-        let reciprocal = inverse_length_squared(dot3(vector, vector), 2);
-        result[axis] = vector.map(|v| v * reciprocal);
+        let squared = dot3(vector, vector);
+        if squared <= f32::from_bits(0x3586_37bd) {
+            // upstream c87373d: degenerate axes after wipeout bail teleports
+            result[axis] = IDENTITY[axis];
+        } else {
+            let reciprocal = inverse_length_squared(squared, 2);
+            result[axis] = vector.map(|v| v * reciprocal);
+        }
     }
     result
 }

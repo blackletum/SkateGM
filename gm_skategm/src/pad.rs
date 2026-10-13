@@ -229,8 +229,8 @@ mod sdl {
             unsafe {
                 (a.update)();
                 if !self.ctrl.is_null() && (a.attached)(self.ctrl) == 0 {
-                    super::watch_sdl(None);
-                    (a.close)(self.ctrl);
+                    let (close, ctrl) = (a.close, self.ctrl);
+                    super::close_watched(move || close(ctrl));
                     self.ctrl = std::ptr::null_mut();
                     self.name.clear();
                 }
@@ -310,6 +310,15 @@ fn watch_xinput(slot: Option<usize>) {
     }
 }
 
+/// Closes the controller the watchdog may be about to stop: both under one lock,
+/// so it never touches a closed one.
+#[allow(dead_code)]
+fn close_watched(close: impl FnOnce()) {
+    let mut live = LIVE.lock().unwrap_or_else(|e| e.into_inner());
+    live.sdl = None;
+    close();
+}
+
 fn start_watchdog() {
     WATCHDOG.call_once(|| {
         let _ = std::thread::Builder::new().name("skategm rumble".into()).spawn(|| loop {
@@ -318,8 +327,10 @@ fn start_watchdog() {
             if until.is_some_and(|u| u > std::time::Instant::now()) {
                 continue;
             }
-            let live = std::mem::take(&mut *LIVE.lock().unwrap_or_else(|e| e.into_inner()));
+            let mut guard = LIVE.lock().unwrap_or_else(|e| e.into_inner());
+            let live = std::mem::take(&mut *guard);
             stop_live(live);
+            drop(guard);
         });
     });
 }
@@ -352,11 +363,14 @@ pub enum Device {
     Sdl,
 }
 
+/// One SDL for the process: loaded and initialised once, kept across sessions
+/// (each session used to load and SDL_Init it again, never closing either).
+#[cfg(windows)]
+static SDL: std::sync::Mutex<Option<Result<sdl::Sdl, String>>> = std::sync::Mutex::new(None);
+
 #[derive(Default)]
 pub struct Pads {
     chooser: Chooser,
-    #[cfg(windows)]
-    sdl: Option<Result<sdl::Sdl, String>>,
     pub name: String,
     pub kind: &'static str,
     rumbled: Option<(u64, bool, Option<Device>)>,
@@ -402,7 +416,7 @@ impl Pads {
                 xinput::set(i, low, high)
             }
             Some(Device::Sdl) => {
-                if let Some(Ok(s)) = self.sdl.as_mut() {
+                if let Some(Ok(s)) = SDL.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
                     s.rumble(low, high, ms);
                 }
             }
@@ -424,7 +438,8 @@ impl Pads {
         }
         #[cfg(windows)]
         {
-            let sdl = self.sdl.get_or_insert_with(sdl::Sdl::load);
+            let mut guard = SDL.lock().unwrap_or_else(|e| e.into_inner());
+            let sdl = guard.get_or_insert_with(sdl::Sdl::load);
             match sdl {
                 Ok(s) => {
                     let read = s.read();

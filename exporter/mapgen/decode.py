@@ -7,8 +7,6 @@ from pathlib import Path
 from . import EXPORTER, MAP_TOOLS, UTT
 
 CACHE_FORMAT = 'skategm-mapgen-2'
-PROXIES = {'DIST_University': 'University_100_Proxy', 'DIST_DownTown': 'Downtown_100_Proxy',
-           'DIST_Industrial': 'Industrial_100_Proxy'}
 EMPTY_ATOC = b'ATOC' + struct.pack('>I', 3) + bytes(16)
 
 
@@ -95,6 +93,10 @@ def _parallel_prepare(prepare, folder, stream, workers, **kwargs):
     textures = [a.data for name in names if name != 'Sim' for a in assets[name] if a.record.asset_type == phd.ASSET_TYPE_TEXTURE]
     sims = [a.data for a in assets['Sim']]
     real_load, real_parse, real_collision = phd.load_district_stream, rx2_parser.parse_rx2, phd.decode_rx2_clustered_meshes
+    real_write = phd._write_rx2
+    keep_models = kwargs.pop('keep_models', False)
+    if keep_models:
+        phd._write_rx2 = lambda root, category, asset, write=True: real_write(root, category, asset, write=write or category == 'models')
     with ProcessPoolExecutor(max_workers=workers or os.cpu_count(), initializer=_worker_init, initargs=(list(sys.path),)) as pool:
         tex, col = Ahead(pool, _parse_texture, textures), Ahead(pool, _parse_collision, sims)
         phd.load_district_stream = lambda directory, name, district: assets[name] if name in assets else real_load(directory, name, district)
@@ -104,18 +106,21 @@ def _parallel_prepare(prepare, folder, stream, workers, **kwargs):
             return prepare(**kwargs)
         finally:
             phd.load_district_stream, rx2_parser.parse_rx2, phd.decode_rx2_clustered_meshes = real_load, real_parse, real_collision
+            phd._write_rx2 = real_write
 
 
 def decode_stream(source, archive_path, stream, work, report=print, workers=None):
     _imports()
-    from tools.owned_game.big import BigArchive
+    from .archives import open_archive as BigArchive
     from prepare_hawaiian_dream import prepare
-    from prepare_university import EXCLUDED_NORMAL_TEXTURE_IDS
+    import importlib
+    decoder = importlib.import_module(source.game.decoder)
     out = Path(work) / stream
     manifest = out / 'intermediate/manifest.json'
     stamp = out / 'mapgen.json'
     archive = source.file(archive_path, report)
-    key = {'format': CACHE_FORMAT, 'archive': archive.name, 'size': archive.stat().st_size}
+    key = {'format': CACHE_FORMAT, 'archive': archive.name, 'size': archive.stat().st_size,
+           'channels': bool(source.game.lightmap_channels)}
     if manifest.is_file() and stamp.is_file() and json.loads(stamp.read_text()) == key:
         return manifest.parent
     if out.exists():
@@ -133,21 +138,52 @@ def decode_stream(source, archive_path, stream, work, report=print, workers=None
     if str(UTT) not in sys.path:
         sys.path.insert(0, str(UTT))
     _parallel_prepare(prepare, folder, stream, workers, stream_directory=folder, output_root=out / 'intermediate', utt_root=UTT,
-            district_name=stream, map_name=stream, package_name='Skate 3',
+            district_name=stream, map_name=stream, package_name=source.game.title,
             cache_format='skate3-rust-map-v1',
             texture_stream_names=('Tex',) if any(folder.glob('cTex_*.xsf')) else (),
-            excluded_normal_texture_ids=EXCLUDED_NORMAL_TEXTURE_IDS, raw_texture_cache=True,
-            write_render_sources=False)
+            excluded_normal_texture_ids=getattr(decoder, 'EXCLUDED_NORMAL_TEXTURE_IDS', ()), raw_texture_cache=True,
+            excluded_static_model_asset_ids=getattr(decoder, 'EXCLUDED_STATIC_MODEL_ASSET_IDS', ()),
+            write_render_sources=False, keep_models=bool(source.game.lightmap_channels), **source.game.decode_options)
+    if source.game.lightmap_channels:
+        lightmap_channels(out / 'intermediate', report)
     stamp.write_text(json.dumps(key))
     return manifest.parent
 
 
-def decode(source, district, work, report=print):
-    return decode_stream(source, f'data/content/world{district}.big', district, work, report)
+CHANNELS_FILE = 'lightmap_channels.json'
 
 
-def decode_proxy(source, district, work, report=print):
-    stream = PROXIES.get(district)
+def lightmap_channels(root, report=print):
+    from build_skate2_lightmap_aliases import _raw_lightmap_groups
+    root = Path(root)
+    manifest = json.loads((root / 'manifest.json').read_text(encoding='utf-8'))
+    out = {}
+    for model in manifest['models']:
+        asset = str(model['asset_id']).lower()
+        path = root / 'rx2' / 'models' / f'{asset[2:].upper()}.rx2'
+        if not path.is_file():
+            continue
+        try:
+            groups = _raw_lightmap_groups(path.read_bytes())
+        except ValueError:
+            continue
+        for mesh in model['meshes']:
+            g = int(mesh.get('retail_material_group_index', -1))
+            if 0 <= g < len(groups) and 'lightmap_component' in groups[g]:
+                out[f'{asset}:{int(mesh["index"])}'] = int(groups[g]['lightmap_component'])
+    (root / CHANNELS_FILE).write_text(json.dumps(out), encoding='utf-8')
+    shutil.rmtree(root / 'rx2' / 'models', ignore_errors=True)
+    report(f'{len(out)} lightmap channels read from the models')
+    return out
+
+
+def decode(source, district, work, report=print, workers=None):
+    stream = source.game.stream(district)
+    return decode_stream(source, stream.archive, stream.name, work, report, workers)
+
+
+def decode_proxy(source, district, work, report=print, workers=None):
+    stream = source.game.proxy(district)
     if stream is None:
         return None
-    return decode_stream(source, f'data/content/proxy{stream}.big', stream, work, report)
+    return decode_stream(source, stream.archive, stream.name, work, report, workers)

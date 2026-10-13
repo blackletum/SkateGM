@@ -31,3 +31,5 @@ harness/vc_chunks/
 # warehouse compile output (the .bsp ships from addon/skategm/maps)
 maps/src/*
 !maps/src/*.vmf
+exporter/target/
+.*/worktrees/

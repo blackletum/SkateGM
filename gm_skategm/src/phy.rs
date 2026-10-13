@@ -43,6 +43,8 @@ pub fn hulls(data: &[u8]) -> Result<Vec<Vec<[Vec3; 3]>>, String> {
         return Err(format!("not a .phy (solids {solids}, header {header_size})"));
     }
     let mut out = Vec::new();
+    let mut visited = std::collections::HashSet::new();
+    let mut total = 0usize;
     let mut offset = header_size;
     for _ in 0..solids {
         let size = r.i32(offset).ok_or("truncated solid")? as usize;
@@ -76,7 +78,15 @@ pub fn hulls(data: &[u8]) -> Result<Vec<Vec<[Vec3; 3]>>, String> {
             let compact = r.i32(node + 4).ok_or("bad node")?;
             if right == 0 {
                 let ledge = (node as i64 + compact as i64) as usize;
-                out.push(ledge_triangles(&r, ledge)?);
+                if !visited.insert(ledge) {
+                    continue;
+                }
+                let tris = ledge_triangles(&r, ledge)?;
+                total += tris.len();
+                if total > MAX_TRIANGLES {
+                    return Err("too many collision triangles".into());
+                }
+                out.push(tris);
             } else {
                 stack.push((node as i64 + right as i64) as usize);
                 stack.push(node + LEDGE_NODE);
@@ -87,6 +97,10 @@ pub fn hulls(data: &[u8]) -> Result<Vec<Vec<[Vec3; 3]>>, String> {
     let _ = COMPACT_SURFACE_HEADER;
     Ok(out)
 }
+
+/// More than any real model has: a file asking for more is broken (or made
+/// to exhaust memory).
+const MAX_TRIANGLES: usize = 200_000;
 
 fn ledge_triangles(r: &Reader, ledge: usize) -> Result<Vec<[Vec3; 3]>, String> {
     let point_offset = r.i32(ledge).ok_or("bad ledge")?;

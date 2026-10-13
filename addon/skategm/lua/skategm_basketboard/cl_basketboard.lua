@@ -71,7 +71,7 @@ function C.InZone(st, a, board, hips)
 	if not (st.hoop and (st.zone or 0) > 0) then return false end
 	local state = a.State and a.State() or ""
 	if state:find("Air", 1, true) and not state:find("Biped", 1, true) then return false end
-	local ground = { st.hoop[1], st.hoop[2], st.ground or st.hoop[3] }
+	local ground = { st.hoop[1], st.hoop[2], st.floor and st.floor[3] or st.hoop[3] }
 	local P = a.PoseOf and a.PoseOf(LocalPlayer())
 	return (st.zone or 0) > 0 and SKATEGM_MODES.TouchingNoZone(P, ground, 0, st.zone, state:find("Wipeout", 1, true) ~= nil) or false
 end
@@ -142,7 +142,7 @@ function C.DrawHoop(st, pulse)
 	local bh = bw * 0.6
 	local back = h - f * (r + 6)
 	local bottom = back - up * 8
-	local ground = st.ground or (h.z - (st.height or BB.HEIGHT_DEFAULT))
+	local ground = st.floor and st.floor[3] or (h.z - (st.height or BB.HEIGHT_DEFAULT))
 	local poleAt = back - f * 16
 	render.SetMaterial(mat)
 	mesh.Begin(MATERIAL_QUADS, 7 + C.SEGMENTS * 3)
@@ -272,7 +272,7 @@ function C.DrawWorld()
 	local st = C.state
 	if st.phase == "idle" or not st.hoopV then return end
 	local pulse = 0.8 + 0.2 * math.sin(RealTime() * 3)
-	if (st.zone or 0) > 0 then SKATEGM_MODES.DrawNoZone(Vector(st.hoopV.x, st.hoopV.y, 0), 0, st.zone, (st.ground or st.hoopV.z) + 1) end
+	if (st.zone or 0) > 0 then SKATEGM_MODES.DrawNoZone(Vector(st.hoopV.x, st.hoopV.y, 0), 0, st.zone, (st.floor and st.floor[3] or st.hoopV.z) + 1) end
 	C.DrawHoop(st, pulse)
 	if st.startV and (st.phase == "lobby" or st.phase == "prep" or st.phase == "countdown") then
 		render.SetColorMaterial()

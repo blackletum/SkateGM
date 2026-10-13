@@ -30,17 +30,24 @@ own copy.
 
 ## Install
 
-1. Download **`SkateGM-Setup-<version>.exe`** from the
+1. **Subscribe to SkateGM on the
+   [Steam Workshop](https://steamcommunity.com/workshop/browse/?appid=4000&searchtext=SkateGM).**
+   That's the add-on, the gamemode and the warehouse map; Steam keeps it up to date.
+2. Download **`SkateGM-Setup-<version>.exe`** from the
    [latest release](../../releases/latest).
-2. Close Garry's Mod and run the installer.
-3. Choose your Skate 3 **`.iso`** (or **`default.xex`**) and press **Install**.
+3. Close Garry's Mod and run the installer.
+4. Choose your Skate 3 **`.iso`** (or **`default.xex`**) and press **Install**.
    The installer finds Garry's Mod on its own; if it can't, choose the folder
    that has `garrysmod` inside. It converts your game files on your PC
-   (nothing is downloaded) and installs the add-on and the engine module.
+   (nothing is downloaded) and installs the engine module, which the Workshop
+   can't carry. Not using the Workshop? Tick **Install add-on** and it installs
+   the add-on too; left off, an add-on copy from an older installer is removed
+   so it can't clash with the Workshop one.
 
-**To update**, run the new installer. Tick "Keep the game data I already
-converted" to skip converting again. **To uninstall**, run the installer and
-press **Uninstall**.
+**To update**, Steam updates the add-on; run a new installer when SkateGM
+says its engine module is older than the add-on. Tick "Keep the game data I
+already converted" to skip converting again. **To uninstall**, unsubscribe,
+then run the installer and press **Uninstall**.
 
 ## Play
 
@@ -145,14 +152,28 @@ your PC: their geometry, textures and lighting, with the game's own skate
 collision and grind rails inside, so they skate like Skate 3. Nothing from the
 game is downloaded or shared. They show up in the map list as:
 
+**Entire Maps**
+
+| Map | Place |
+|---|---|
+| `sgm_skate3_portcarverton` | All of Port Carverton: University, Downtown and Industrial, streamed in as you skate |
+| `sgm_skate2_newsanvan` | New San Vanelona from Skate 2, streamed (needs your Skate 2 disc too) |
+
+**Map Segments**
+
+| Map | Place |
+|---|---|
+| `sgm_skate3_university` | University's campus |
+| `sgm_skate3_unibowl` | The bowl in University's stadium |
+| `sgm_skate3_ultramegapark` | University's Super Ultra Mega Park |
+| `sgm_skate3_industrial` | Industrial's canal and harbour blocks |
+| `sgm_skate3_quarry` | Industrial's quarry |
+
+**Skate Parks**
+
 | Map | Place |
 |---|---|
 | `sgm_skate3_maloof` | Maloof Money Cup |
-| `sgm_skate3_unibowl` | The bowl in University's stadium |
-| `sgm_skate3_ultramegapark` | University's Super Ultra Mega Park |
-| `sgm_skate3_university` | University's campus |
-| `sgm_skate3_industrial` | Industrial's canal and harbour blocks |
-| `sgm_skate3_quarry` | Industrial's quarry |
 | `sgm_skate3_skateschool` | Skate School |
 | `sgm_skate3_blackbox` | Black Box |
 
@@ -169,9 +190,10 @@ and it plays (shuffled) while you skate. LB + the right stick controls it
 
 ### Multiplayer
 
-Everyone who wants to skate runs the installer on their own PC. A dedicated
-server only needs the `skategm` add-on folder, from the release zip, in its
-`garrysmod/addons`. To host a Skate 3 map, also copy
+Everyone who wants to skate subscribes on the Workshop and runs the installer
+on their own PC. A dedicated server only needs the add-on: add the Workshop
+item to its collection (or put the `skategm` folder from the release zip in
+its `garrysmod/addons`). To host a Skate 3 map, also copy
 `garrysmod/addons/skategm_maps` from a PC that built it: every PC builds the
 same file, so players who built the maps can join.
 

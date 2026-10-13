@@ -11,7 +11,11 @@ function LocalPlayer() return ME end
 local frozen
 local near = false
 skategm = { CollisionHas = function() return near end, SetFrozen = function(v) frozen = v end }
-SkateGM = { phase = "on", pose = { pos = { 50000, 0, 10 } } }
+local holds = {}
+SkateGM = { phase = "on", pose = { pos = { 50000, 0, 10 } }, API = { Freeze = function(on, why)
+	holds[why] = on and true or nil
+	skategm.SetFrozen(next(holds) and 1 or 0)
+end } }
 local S = SkateGM
 
 dofile("../../addon/skategm/lua/skategm/cl_infmap.lua")

@@ -26,6 +26,12 @@ VERSION = (ROOT / 'VERSION').read_text(encoding='utf-8').strip()
 NAME = 'SkateGM-Setup-' + VERSION
 
 
+
+def cdylib(source, out):
+    run('rustc', '--edition', '2024', '--crate-type', 'cdylib', '-C', 'opt-level=3', '-C', 'panic=abort',
+        '-C', 'target-feature=+crt-static', source, '-o', out)
+    return out
+
 def run(*args, env=None):
     print('>', ' '.join(map(str, args)), flush=True)
     subprocess.run([str(a) for a in args], check=True, env=env)
@@ -81,9 +87,8 @@ def main():
     work = BUILD / 'installer'
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
-    refpack = work / 'refpack.dll'
-    run('rustc', '--edition', '2024', '--crate-type', 'cdylib', '-C', 'opt-level=3', '-C', 'panic=abort',
-        '-C', 'target-feature=+crt-static', ROOT / 'exporter' / 'tools' / 'asset_pipeline' / 'refpack_native.rs', '-o', refpack)
+    refpack = cdylib(ROOT / 'exporter' / 'tools' / 'asset_pipeline' / 'refpack_native.rs', work / 'refpack.dll')
+    vtfenc = cdylib(ROOT / 'exporter' / 'mapgen' / 'native' / 'vtfenc.rs', work / 'vtfenc.dll')
     licenses = work / 'licenses'
     licenses.mkdir()
     for src, name in [('LICENSE', 'SkateGM-LICENSE.txt'), ('engine/LICENSE', 'engine-LICENSE.txt'), ('engine/NOTICE-mashup', 'engine-NOTICE.txt'),
@@ -107,7 +112,9 @@ def main():
         '--paths', ROOT / 'exporter',
         '--hidden-import', 'numpy', '--hidden-import', 'PIL.Image', '--hidden-import', 'convert', '--hidden-import', 'xiso', '--hidden-import', 'soundfile', '--collect-submodules', 'mapgen',
         '--add-binary', f'{refpack}{SEP}tools/asset_pipeline',
+        '--add-binary', f'{vtfenc}{SEP}mapgen/native',
         '--add-data', f'{ROOT / "exporter" / "tools"}{SEP}tools',
+        '--add-data', f'{ROOT / "exporter" / "mapgen" / "icons"}{SEP}mapgen/icons',
         '--add-data', f'{ROOT / "addon" / "skategm"}{SEP}payload/addon',
         '--add-binary', f'{DLL}{SEP}payload',
         '--add-binary', f'{PREBUILT / EXTRAS[0]}{SEP}payload',

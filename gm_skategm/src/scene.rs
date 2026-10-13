@@ -297,6 +297,12 @@ pub struct Scene {
     statics: Vec<Placed>,
     /// model shapes, local space: from Lua (props) or the map (brush entities)
     models: HashMap<String, Arc<Tris>>,
+    model_gen: HashMap<String, u64>,
+    next_gen: u64,
+    /// how far each model reaches from its origin (by generation)
+    reach: std::cell::RefCell<HashMap<String, (u64, f32)>>,
+    /// the last build fitted a smaller region than the layer alone asks for
+    last_shrunk: bool,
     /// models Lua said have no collision shape
     shapeless: HashSet<String>,
     dynamic: Vec<Placed>,
@@ -339,6 +345,10 @@ impl Scene {
             big_gen: 0,
             layer_weights: None,
             models,
+            model_gen: HashMap::new(),
+            next_gen: 0,
+            reach: std::cell::RefCell::new(HashMap::new()),
+            last_shrunk: false,
             shapeless: HashSet::new(),
             dynamic: Vec::new(),
         };
@@ -407,9 +417,34 @@ impl Scene {
         if tris.is_empty() {
             self.shapeless.insert(name.clone());
         } else {
-            self.models.insert(name.clone(), Arc::new(tris));
+            self.insert_model(name.clone(), tris);
         }
         self.mark_if_static(&name);
+    }
+
+    /// Each definition gets a new generation: caches key on it, never on
+    /// where the triangles happen to sit in memory (a freed Arc's address
+    /// comes back for the next allocation).
+    fn insert_model(&mut self, name: String, tris: Tris) {
+        self.next_gen += 1;
+        self.model_gen.insert(name.clone(), self.next_gen);
+        self.models.insert(name, Arc::new(tris));
+    }
+
+    fn model_generation(&self, name: &str) -> u64 {
+        self.model_gen.get(name).copied().unwrap_or(0)
+    }
+
+    fn model_reach(&self, name: &str, m: &Tris) -> f32 {
+        let generation = self.model_generation(name);
+        if let Some(&(g, r)) = self.reach.borrow().get(name) {
+            if g == generation {
+                return r;
+            }
+        }
+        let r = m.iter().flat_map(|t| t.iter()).map(|v| v.length()).fold(0.0f32, f32::max);
+        self.reach.borrow_mut().insert(name.to_string(), (generation, r));
+        r
     }
 
     /// A shape arrived: if static props use it, the static layer is rebuilt.
@@ -428,7 +463,7 @@ impl Scene {
         if tris.is_empty() {
             self.shapeless.insert(name.clone());
         } else {
-            self.models.insert(name.clone(), Arc::new(tris));
+            self.insert_model(name.clone(), tris);
         }
         self.mark_if_static(&name);
     }
@@ -510,6 +545,9 @@ impl Scene {
         }
         self.layer_dirty = false;
         self.dirty_since = None;
+        if self.base.is_empty() && !self.layer.is_empty() {
+            return;
+        }
         let mut tris = self.base.clone();
         let mut tags = self.base_tags.clone();
         let world = self.solid.as_deref();
@@ -614,11 +652,19 @@ impl Scene {
                 mix(i as u64 | 1 << 40);
             }
         }
-        let placement = |p: &Placed, m: &Arc<Tris>, mix: &mut dyn FnMut(u64)| {
+        // (an entity reaching past the region is trimmed to it, and a region
+        // the budget shrank depends on the entities around it: either way the
+        // build depends on exactly where the centre is)
+        let mut on_centre = self.last_shrunk;
+        let mut placement = |p: &Placed, m: &Arc<Tris>, mix: &mut dyn FnMut(u64)| {
             for b in p.model.bytes() {
                 mix(u64::from(b));
             }
-            mix(Arc::as_ptr(m) as usize as u64);
+            let r = self.model_reach(&p.model, m);
+            if (p.origin.x - centre.x).abs() + r > half || (p.origin.y - centre.y).abs() + r > half {
+                on_centre = true;
+            }
+            mix(self.model_generation(&p.model));
             for x in p.origin.to_array().iter().chain(p.angles.iter()) {
                 mix(u64::from(x.to_bits()));
             }
@@ -638,6 +684,10 @@ impl Scene {
                     placement(p, m, &mut mix);
                 }
             }
+        }
+        if on_centre {
+            mix(u64::from(centre.x.to_bits()));
+            mix(u64::from(centre.y.to_bits()));
         }
         (h, half)
     }
@@ -789,6 +839,7 @@ impl Scene {
             m.len() > 0 && (hi - lo).length() >= BIG_ENTITY_SIZE
         };
         let (big, small): (Vec<_>, Vec<_>) = selected.iter().copied().partition(|(_, m)| split && is_big(m));
+        let gens = &self.model_gen;
         let key_of = |set: &[(&Placed, &Arc<Tris>)]| {
             let mut h: u64 = 0xcbf2_9ce4_8422_2325;
             let mut mix = |x: u64| h = (h ^ x).wrapping_mul(0x0100_0000_01b3);
@@ -800,7 +851,8 @@ impl Scene {
                 for b in p.model.bytes() {
                     mix(u64::from(b));
                 }
-                mix(Arc::as_ptr(m) as usize as u64);
+                let _ = m;
+                mix(gens.get(&p.model).copied().unwrap_or(0));
                 for x in p.origin.to_array().iter().chain(p.angles.iter()) {
                     mix(u64::from(x.to_bits()));
                 }
@@ -848,6 +900,7 @@ impl Scene {
         // 3 x 3 of chunks went to the engine (1-2M triangles, seconds a build).
         // `SK8_OFF=entbudget`: the layer alone sizes it, as before.
         let t_budget0 = t0.elapsed();
+        self.last_shrunk = false;
         let trim = !cleanup::off("enttrim");
         if trim && !cleanup::off("entbudget") && cleanup::env_var("SK8_REGION_HALF").is_err() && parts.iter().any(|p| !p.0.is_empty()) {
             let weights = self.layer_weights.as_ref().filter(|w| w.len() == self.layer.len());
@@ -864,6 +917,7 @@ impl Scene {
                 }
             }
             if fit != half {
+                self.last_shrunk = true;
                 half = fit;
                 CURRENT_HALF.store(half.to_bits(), std::sync::atomic::Ordering::Relaxed);
                 tris.clear();

@@ -103,6 +103,6 @@ t = t + ROYALE.RESULTS ROYALE.Think(t)
 check("then back to the lobby, everyone in again", G.phase == "lobby" and not G.entries["3"].out and #G.players == 4)
 ROYALE.Command(host, { cmd = "begin" }, t)
 t = t + ROYALE.COUNTDOWN ROYALE.Think(t)
-bob.gone, cat.gone, dan.gone = true, true, true
+CurTime = function() return t + 0.5 end ROYALE.mode.leaveHandler(bob) ROYALE.mode.leaveHandler(cat) ROYALE.mode.leaveHandler(dan) bob.gone, cat.gone, dan.gone = true, true, true
 ROYALE.Think(t + 1)
 check("everyone else leaves mid-run: the one left wins", G.phase == "results" and G.winner and G.winner.name == "Host")

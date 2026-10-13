@@ -180,6 +180,21 @@ end
 -- chunk, which moves; the engine needs one fixed frame). Everything crossing
 -- into or out of the module is shifted by it; the network carries absolute
 -- positions. No offset (every other map): nothing changes.
+-- (SKATEGM_SPACE, skategm/sh_space.lua: where things really are)
+function S.EntPos(e) return SKATEGM_SPACE.Abs(e) end
+function S.ViewPos(e) return SKATEGM_SPACE.View(e) end
+function S.FindNear(abs, r) return SKATEGM_SPACE.FindInSphere(abs, r) end
+
+-- the middle of the four wheels (nil when the pose has no board)
+function S.WheelCentre(P)
+	local rf, lf, rb, lb = P and P.RIGHT_WHEELFRONT, P and P.LEFT_WHEELFRONT, P and P.RIGHT_WHEELBACK, P and P.LEFT_WHEELBACK
+	if not (rf and lf and rb and lb) then return nil end
+	return (rf + lf + rb + lb) / 4
+end
+
+-- engine units (inches, times the world scale) to metres
+function S.MetresPerUnit() return 0.0254 * (S.loadedScale or 1) end
+
 function S.Offset()
 	local o = S.frameOffset and S.frameOffset()
 	if o and (o.x ~= 0 or o.y ~= 0 or o.z ~= 0) then return o end
@@ -196,10 +211,22 @@ function S.FromAbs(v)
 	return v - o
 end
 
+S.LAND_ABOVE, S.LAND_BELOW, S.LAND_CLEAR = 16, 64, 4
+function S.LandOn(x, y, z)
+	if not (util and util.TraceLine and x and y and z) then return x, y, z end
+	local p = Vector(x, y, z)
+	local tr = util.TraceLine({ start = p + Vector(0, 0, S.LAND_ABOVE), endpos = p - Vector(0, 0, S.LAND_BELOW), mask = MASK_SOLID_BRUSHONLY })
+	if tr.Hit and not tr.StartSolid and tr.HitNormal and tr.HitNormal.z > 0.5 and tr.HitPos.z + S.LAND_CLEAR > z then
+		return x, y, tr.HitPos.z + S.LAND_CLEAR
+	end
+	return x, y, z
+end
+
 local function Shift3(t, o, sign)
 	if type(t) == "table" and t[3] then t[1], t[2], t[3] = t[1] + sign * o.x, t[2] + sign * o.y, t[3] + sign * o.z end
 end
 
+S.POSITION_FIRST = { "CollisionHas", "Diagnose", "StaticPropsNear" }
 function S.WrapModule()
 	if not skategm or rawget(skategm, "__frame") then return end
 	local raw = skategm
@@ -219,14 +246,21 @@ function S.WrapModule()
 		return raw.Load(path, x, y, z, ...)
 	end
 	W.Activate = function(x, y, z, ...)
+		S.Teleported()
+		x, y, z = S.LandOn(x, y, z)
 		local o = S.Offset()
 		if o then x, y, z = x + o.x, y + o.y, z + o.z end
 		return raw.Activate(x, y, z, ...)
 	end
-	W.CollisionHas = function(x, y, z, ...)
-		local o = S.Offset()
-		if o then x, y, z = x + o.x, y + o.y, z + o.z end
-		return raw.CollisionHas(x, y, z, ...)
+	for _, name in ipairs(S.POSITION_FIRST) do
+		local f = raw[name]
+		if f then
+			W[name] = function(x, y, z, ...)
+				local o = S.Offset()
+				if o then x, y, z = x + o.x, y + o.y, z + o.z end
+				return f(x, y, z, ...)
+			end
+		end
 	end
 	W.CollisionNear = function(x, y, z, ...)
 		local o = S.Offset()
@@ -254,15 +288,81 @@ function S.WrapModule()
 	skategm = W
 end
 
+-- the frame moved (S.frameOffset changed): what's kept in the old one follows
+function S.FrameShifted(delta)
+	if presentation.Shift then presentation.Shift(renderBuffer, delta) else presentation.Reset(renderBuffer) end
+	S.renderFrame=nil
+	for _, r in pairs(S.remote or {}) do
+		for _, snap in ipairs(r.snaps or {}) do
+			for k, v in pairs(snap.P) do snap.P[k] = v - delta end
+		end
+		r.cacheT = nil
+	end
+	for _, e in ipairs(ents and ents.GetAll and ents.GetAll() or {}) do
+		local last = e.Sk8LastPlace
+		if last and last[1] then last[1] = last[1] - delta end
+		local prev = e.Sk8MoverPrev
+		if prev and prev.p then prev.p = prev.p - delta end
+	end
+	S.lastSyncPos = nil
+	S.passLast = nil
+end
+
+-- every placement of the skater (a teleport, a respawn, a minigame's start,
+-- a rescue) goes through the wrapped Activate: what's kept from before it is
+-- let go here, and everyone else hears it (hook SkateGMTeleported)
+function S.Teleported()
+	presentation.Reset(renderBuffer) S.renderP=nil S.renderCam=nil S.renderState=nil S.renderFrame=nil
+	if hook and hook.Run then hook.Run("SkateGMTeleported") end
+end
+
+function S.CurrentFrame()
+	local o = S.frameOffset and S.frameOffset()
+	return o and Vector(o.x, o.y, o.z) or Vector(0, 0, 0)
+end
+
+-- the one place that notices the frame moving (a streamed map's cell, an
+-- InfMap chunk): the core shifts what it keeps, then everyone else hears it
+-- (hook SkateGMFrameShifted: delta, new frame)
+function S.FrameThink()
+	local o = S.CurrentFrame()
+	local last = S.lastFrame
+	S.lastFrame = o
+	if last and o ~= last then
+		local delta = o - last
+		S.FrameShifted(delta)
+		if hook and hook.Run then hook.Run("SkateGMFrameShifted", delta, o) end
+	end
+end
+if hook and hook.Add then hook.Add("Think", "skategm_frame", function() S.FrameThink() end) end
+
+-- the module's API level this add-on needs (skategm.ApiLevel): the Workshop
+-- updates the add-on on its own, the module only comes with the installer
+S.MODULE_API = 1
+S.INSTALL_HINT = "run the SkateGM installer (it installs gmcl_skategm_win64.dll and converts your Skate 3 disc); Garry's Mod must be on the x86-64 branch"
+
+function S.ModuleTooOld(mod)
+	local level = mod and mod.ApiLevel and mod.ApiLevel() or 0
+	return level < S.MODULE_API, level
+end
+
 local function Native(retry)
 	if skategm then S.WrapModule() return true end
 	if S.nativeFailed and not retry then return false end
 	local ok, err = pcall(require, "skategm")
 	if not ok or not skategm then
 		S.nativeFailed = true
-		S.lastError = "the SkateGM module (gmcl_skategm_win64.dll) isn't installed or couldn't load: put it in garrysmod/lua/bin and use the x86-64 branch of Garry's Mod"
+		S.lastError = "SkateGM's native module isn't installed or couldn't load: " .. S.INSTALL_HINT
 		Say("could not load the native module: " .. tostring(err), true)
-		Say("Put gmcl_skategm_win64.dll in garrysmod/lua/bin and use the x86-64 branch.", true)
+		Say("To install it, " .. S.INSTALL_HINT .. ".", true)
+		return false
+	end
+	local old, level = S.ModuleTooOld(skategm)
+	if old then
+		S.nativeFailed = true
+		S.lastError = string.format("SkateGM's native module is older than this add-on (API %d, needs %d): %s", level, S.MODULE_API, S.INSTALL_HINT)
+		Say(S.lastError, true)
+		skategm = nil
 		return false
 	end
 	S.WrapModule()
@@ -336,7 +436,8 @@ local function Activate()
 	local pos = ply:GetPos()
 	skategm.Activate(pos.x, pos.y, pos.z, ply:EyeAngles().y)
 	S.phase = "on"
-	if skategm.SetFrozen then skategm.SetFrozen(S.frozen and 1 or 0) end
+	S.freezeSent = nil
+	S.ApplyFreeze()
 	SendState(true)
 end
 
@@ -363,18 +464,29 @@ net.Receive("skategm_respawn", function()
 	if hud and hud.events then table.insert(hud.events, 1, { text = "RESPAWN", col = Color(120, 220, 255), t = RealTime() }) end
 end)
 
-local function TurnOff()
+function S.Leave(tellServer)
 	presentation.Reset(renderBuffer) S.renderP=nil S.renderCam=nil S.renderState=nil S.renderFrame=nil
-	if skategm and skategm.SetFrozen then skategm.SetFrozen(0) end
+	S.freezeWhy, S.blockWhy, S.views, S.hideOthersWhy, S.noCollideWhy, S.hideOthers, S.noPlayerCollision = {}, {}, {}, {}, {}, nil, nil
+	S.inputBlocked, S.viewOverride, S.timeScale, S.lastMoversSig = nil, nil, nil, nil
+	S.freezeSent, S.inputBlockSent, S.markerBlockSent = nil, nil, nil
+	S.ApplyFreeze()
 	if skategm and skategm.SetInputBlocked then skategm.SetInputBlocked(0) end
 	if skategm and skategm.SetMarkerBlocked then skategm.SetMarkerBlocked(0) end
-	S.frozen, S.inputBlocked, S.viewOverride, S.timeScale, S.inputBlockSent, S.lastMoversSig, S.markerBlockSent = nil, nil, nil, nil, nil, nil, nil
-	S.freezeWhy, S.blockWhy, S.views, S.hideOthersWhy, S.noCollideWhy, S.hideOthers, S.noPlayerCollision = {}, {}, {}, {}, {}, nil, nil
-	if S.phase == "on" then
+	for why in pairs(S.hiddenWhy) do
+		if why ~= "replay" then S.SetHidden(why, false) end
+	end
+	WATER.state, WATER.fade = "dry", 0
+	if S.rescue then S.rescue.safe, S.rescue.airSince, S.rescue.groundSince = nil, nil, nil end
+	if S.infmap then S.infmap.waiting = nil end
+	if tellServer and S.phase == "on" then
 		local pos = S.pose and S.pose.pos and V(S.pose.pos) or LocalPlayer():GetPos()
 		SendState(false, pos, Heading())
 	end
 	S.phase = "off"
+end
+
+local function TurnOff()
+	S.Leave(true)
 end
 
 concommand.Add("skategm_toggle", function()
@@ -468,7 +580,7 @@ concommand.Add("skategm_report", function()
 	print(string.format("[SkateGM] tiny props left out (skategm_tiny_props_solid 0): %d, props colliding as their bounding box: %d, as their visible mesh: %d", S.tinyProps or 0, S.boxProps or 0, S.meshProps or 0))
 	print(string.format("[SkateGM] other skaters in view: %d, player collision: %s, world scale %.2f, speed %.1f m/s",
 		n, cvCollide:GetBool() and "on" or "off", S.loadedScale or 1,
-		p.vel and V(p.vel):Length() * 0.0254 * (S.loadedScale or 1) or 0))
+		p.vel and V(p.vel):Length() * S.MetresPerUnit() or 0))
 	if S.retargetErr then Say("pose error: " .. S.retargetErr, true) end
 	if p.error then Say(p.error, true) end
 end)
@@ -763,7 +875,8 @@ local function FeedEntities(centre)
 	local now = RealTime()
 	-- only things near the skater; far ones must move a lot before they cause
 	-- a collision rebuild (a spinning fan across the map shouldn't stutter you)
-	for _, e in ipairs(ents.FindInSphere(centre, 2500)) do
+	local cands = S.FindNear(SKATEGM_SPACE.FromView(centre), 2500)
+	for _, e in ipairs(cands) do
 		if IsValid(e) and e ~= S.skater and not e:IsPlayer() and not e:IsNPC() and not e:IsWeapon()
 			and not SKIP_CLASS[e:GetClass()] and not S.SkipEntity(e) and e:GetSolid() ~= SOLID_NONE
 			and bit.band(e:GetSolidFlags(), bit.bor(FSOLID_NOT_SOLID, FSOLID_TRIGGER)) == 0
@@ -776,7 +889,7 @@ local function FeedEntities(centre)
 				if not e.SkateGMPart and string.sub(mdl, 1, 1) ~= "*" and (solid == SOLID_BBOX or solid == SOLID_OBB or solid == SOLID_OBB_YAW) then
 					mdl = mdl .. "#bbox"
 				end
-				local p, a = e:GetPos(), e:GetAngles()
+				local p, a = S.ViewPos(e), e:GetAngles()
 				local still = movers and S.CanMove(mdl) and MovedSince(e, p, a, now) or math.huge
 				if still < S.MOVING_HOLD + S.MOVING_OVERLAP then
 					S.movingEnts[e] = { mdl = mdl, at = e.Sk8MovedAt }
@@ -848,7 +961,7 @@ function S.MoversList(centre, now)
 	for _, feed in ipairs(S.MoverFeeds or {}) do feed(centre, list, now) end
 	for e, info in pairs(S.movingEnts) do
 		if IsValid(e) and now - (info.at or -100) < S.MOVING_HOLD + S.MOVING_OVERLAP then
-			local p, a = e:GetPos(), e:GetAngles()
+			local p, a = S.ViewPos(e), e:GetAngles()
 			if p:DistToSqr(centre) < 2500 * 2500 then
 				-- (and how fast it's going, from its own movement frame to frame:
 				-- the module carries a skater standing on it - a lift, a platform)
@@ -971,11 +1084,7 @@ net.Receive("skategm_pose", function()
 end)
 
 net.Receive("skategm_off", function()
-	local ply = net.ReadEntity()
-	S.remote[ply] = nil
-	S.StopSounds(ply)
-	if IsValid(models[ply]) then models[ply]:Remove() end
-	models[ply] = nil
+	S.ForgetSkater(net.ReadEntity())
 end)
 
 local DELAY = 0.1 -- draw remote skaters this far in the past, between two snapshots
@@ -1042,7 +1151,7 @@ function PlayerBlocks(centre, list, sig)
 					pos = Vector(P.HIPS.x, P.HIPS.y, fz - 4)
 				end
 			elseif not ply:GetNoDraw() then
-				pos = ply:GetPos() -- walking normally
+				pos = S.ViewPos(ply) -- walking normally
 			end
 			if pos and pos:DistToSqr(centre) < 1500 * 1500 then
 				list[#list + 1] = { "skategm/player", pos.x, pos.y, pos.z, 0, 0, 0 }
@@ -1073,6 +1182,13 @@ end
 --   skategm_ghost        start / stop replaying your recent skating
 ---------------------------------------------------------------------------
 local record = {}          -- { t, P } of your own skating, 20 per second
+if hook and hook.Add then
+	hook.Add("SkateGMFrameShifted", "skategm_record", function(delta)
+		for _, r in ipairs(record) do
+			for k, v in pairs(r.P) do r.P[k] = v - delta end
+		end
+	end)
+end
 local GHOST_SECONDS = 15
 local ghost                -- stands in for a remote player
 
@@ -1111,10 +1227,7 @@ end
 
 concommand.Add("skategm_ghost", function()
 	if ghost then
-		S.remote[ghost.key] = nil
-		S.StopSounds(ghost.key)
-		if IsValid(models[ghost.key]) then models[ghost.key]:Remove() end
-		models[ghost.key] = nil
+		S.ForgetSkater(ghost.key)
 		ghost = nil
 		Say("ghost stopped")
 		return
@@ -1250,6 +1363,13 @@ function S.InputBlockWanted()
 	if cvUnfocused:GetBool() or not (system and system.HasFocus) then return false end
 	return not system.HasFocus()
 end
+function S.ApplyFreeze()
+	S.frozen = next(S.freezeWhy) ~= nil or nil
+	local want = S.frozen == true
+	if want == S.freezeSent then return end
+	S.freezeSent = want
+	if skategm and skategm.SetFrozen then skategm.SetFrozen(want and 1 or 0) end
+end
 function S.ApplyInputBlock()
 	local want = S.InputBlockWanted()
 	if want == S.inputBlockSent then return end
@@ -1262,6 +1382,9 @@ function S.ApplyMarkerBlock()
 	if want == S.markerBlockSent then return end
 	S.markerBlockSent = want
 	if skategm and skategm.SetMarkerBlocked then skategm.SetMarkerBlocked(want and 1 or 0) end
+end
+function S.Buttons(p)
+	return bit.bor(p and p.padButtons or 0, S.keyboardButtons or 0)
 end
 local BTN_RB = 0x0200
 local ROCKET_ACCEL, ROCKET_TOP = 18, 30 -- m/s per second, top speed m/s
@@ -1417,8 +1540,8 @@ end
 
 function S.RocketThink(p, now, dt)
 	local forced = S.RocketForced(LocalPlayer())
-	local lb = p ~= nil and bit.band(bit.bor(p.padButtons or 0, S.keyboardButtons or 0), 0x0100) ~= 0
-	local held = forced or (p ~= nil and not lb and bit.band(bit.bor(p.padButtons or 0, S.keyboardButtons or 0), BTN_RS) ~= 0)
+	local lb = p ~= nil and bit.band(S.Buttons(p), 0x0100) ~= 0
+	local held = forced or (p ~= nil and not lb and bit.band(S.Buttons(p), BTN_RS) ~= 0)
 	local on = (cvRocket:GetBool() or S.RocketOn(LocalPlayer())) and S.RocketAllowed(LocalPlayer()) and S.phase == "on" and p ~= nil and not S.frozen
 		and held and OnBoard(p.state)
 	on = S.RocketFuelThink(on and true or false, held, now, dt)
@@ -1430,14 +1553,13 @@ function S.RocketThink(p, now, dt)
 		net.Start("skategm_rocket") net.WriteBool(on) net.SendToServer()
 	end
 	if not on or not fwd then return end
-	local scale = S.loadedScale or 1
 	local v = p.vel and Vector(p.vel[1], p.vel[2], p.vel[3]) or Vector()
-	local speed = v:Length() * 0.0254 * scale
+	local speed = v:Length() * S.MetresPerUnit()
 	local top = ROCKET_TOP
 	local limit = cvSpeedLimit:GetFloat()
 	if limit > 0 then top = math.min(top, limit) end
 	if speed < top then
-		local dv = math.min(ROCKET_ACCEL * dt, top - speed) / (0.0254 * scale)
+		local dv = math.min(ROCKET_ACCEL * dt, top - speed) / S.MetresPerUnit()
 		local dir = S.RocketDirection(fwd, p.state)
 		if dir then skategm.Push(dir.x * dv, dir.y * dv, dir.z * dv) end
 	end
@@ -1482,7 +1604,7 @@ function S.Facing(P)
 end
 
 function S.UseThink(p)
-	local rb = p ~= nil and bit.band(p.padButtons or 0, BTN_RB) ~= 0
+	local rb = p ~= nil and bit.band(S.Buttons(p), BTN_RB) ~= 0
 	local pressed = rb and not S.rbWas
 	S.rbWas = rb
 	if not pressed or not cvRBUse:GetBool() or S.phase ~= "on" or not OnFoot(p.state) or not S.P then return end
@@ -1609,8 +1731,7 @@ hook.Add("Think", "skategm", function()
 		-- than the map. Shrink what we draw back to normal size around the wheels,
 		-- so the board stays on the ground and the body looks right.
 		local scale = S.loadedScale or 1
-		local w = P.RIGHT_WHEELFRONT and P.LEFT_WHEELFRONT and P.RIGHT_WHEELBACK and P.LEFT_WHEELBACK
-		local anchor = w and (P.RIGHT_WHEELFRONT + P.LEFT_WHEELFRONT + P.RIGHT_WHEELBACK + P.LEFT_WHEELBACK) / 4 or P.HIPS
+		local anchor = S.WheelCentre(P) or P.HIPS
 		S.anchor = anchor
 		if anchor and math.abs(scale - 1) > 1e-3 then
 			for name, v in pairs(P) do P[name] = anchor + (v - anchor) * scale end
@@ -2034,10 +2155,7 @@ function S.UpdateSkaters(now, which)
 	if which == "local" then return end
 	for ply, r in pairs(S.remote) do
 		if not IsValid(ply) or now - r.last > 1.5 then
-			S.remote[ply] = nil
-			S.StopSounds(ply)
-			if IsValid(models[ply]) then models[ply]:Remove() end
-			models[ply] = nil
+			S.ForgetSkater(ply)
 		else
 			local P, stale = S.RemotePose(r, now)
 			if P and P.HIPS and not S.IsHidden(ply) then Show(ply, P, r.state, stale) pcall(S.RemoteWater, ply, P) else Hide(ply) end
@@ -2071,21 +2189,17 @@ hook.Add("CalcView", "skategm", function(ply, origin, angles, fov)
 	if cameraPose then
 		local pos = V(cameraPose.pos)
 		local scale = S.loadedScale or 1
-		local anchor=S.anchor
-		local rp=S.renderP
-		if rp and rp.RIGHT_WHEELFRONT and rp.LEFT_WHEELFRONT and rp.RIGHT_WHEELBACK and rp.LEFT_WHEELBACK then
-			anchor=(rp.RIGHT_WHEELFRONT+rp.LEFT_WHEELFRONT+rp.RIGHT_WHEELBACK+rp.LEFT_WHEELBACK)/4
-		end
+		local anchor = S.WheelCentre(S.renderP) or S.anchor
 		if anchor and math.abs(scale - 1) > 1e-3 then pos = anchor + (pos - anchor) * scale end
 		local ang = V(cameraPose.fwd):AngleEx(V(cameraPose.up))
 		local f = cameraPose.fov or fov
 		pos, ang, f = S.CameraAdjust(pos, ang, f, (S.renderP or S.P) and (S.renderP or S.P).HIPS)
 		pos,ang=keyboard.Camera(S,pos,ang)
 		S.view = { origin = pos, angles = ang }
-		return { origin = pos, angles = ang, fov = f, drawviewer = false }
+		return { origin = pos, angles = ang, fov = f, drawviewer = false, zfar = S.viewZFar }
 	end
 	local target = V(p.pos) + Vector(0, 0, 40)
-	return { origin = target - angles:Forward() * 150, angles = angles, fov = fov, drawviewer = false }
+	return { origin = target - angles:Forward() * 150, angles = angles, fov = fov, drawviewer = false, zfar = S.viewZFar }
 end)
 
 hook.Add("PreDrawViewModel", "skategm", function() if S.phase == "on" then return true end end)
@@ -2120,7 +2234,7 @@ hook.Add("ShutDown", "skategm", function() if skategm then skategm.Stop() end en
 gameevent.Listen("entity_killed")
 hook.Add("entity_killed", "skategm", function(data)
 	local ply = LocalPlayer()
-	if IsValid(ply) and data.entindex_killed == ply:EntIndex() and S.phase ~= "off" then S.phase = "off" end
+	if IsValid(ply) and data.entindex_killed == ply:EntIndex() and S.phase ~= "off" then S.Leave(false) end
 end)
 
 
@@ -2133,6 +2247,11 @@ include("skategm/cl_skate3_music.lua")
 include("skategm/cl_rumble.lua")
 include("skategm/cl_replay.lua")
 include("skategm/cl_infmap.lua")
+include("skategm/cl_stream.lua")
+include("skategm/sh_space.lua")
+include("skategm/sh_cells.lua")
+include("skategm/cl_cells.lua")
+include("skategm/cl_rescue.lua")
 ---------------------------------------------------------------------------
 -- Public interface for other add-ons and game modes (e.g. skategm_ots, Own
 -- the Spot). They use only this; everything else here may change.
@@ -2200,10 +2319,10 @@ S.API = {
 	-- while anyone is, so one letting go doesn't undo another's hold
 	Freeze = function(on, why)
 		S.freezeWhy[why or "mode"] = on and true or nil
-		S.frozen = next(S.freezeWhy) ~= nil or nil
-		if skategm and skategm.SetFrozen then skategm.SetFrozen(S.frozen and 1 or 0) end
+		S.ApplyFreeze()
 	end,
 	IsFrozen = function() return S.frozen == true end,
+	HeldBy = function(why) return S.freezeWhy[why] == true end,
 	-- everything held under a name (and name_anything): freezes, input
 	-- blocks, hiding - a minigame's leftovers when it's over
 	ReleaseHolds = function(name)
@@ -2223,8 +2342,7 @@ S.API = {
 		end
 		S.ShowTopView()
 		if changed then
-			S.frozen = next(S.freezeWhy) ~= nil or nil
-			if skategm and skategm.SetFrozen then skategm.SetFrozen(S.frozen and 1 or 0) end
+			S.ApplyFreeze()
 			S.inputBlocked = next(S.blockWhy) ~= nil or nil
 			S.ApplyInputBlock()
 		end
@@ -2303,7 +2421,7 @@ S.API = {
 	BodyFlip = function() return S.phase == "on" and S.pose ~= nil and S.pose.bodyFlip == true end,
 	Speed = function()
 		local v = S.phase == "on" and S.pose and S.pose.vel
-		return v and math.sqrt(v[1] * v[1] + v[2] * v[2] + v[3] * v[3]) * 0.0254 * (S.loadedScale or 1) or 0
+		return v and math.sqrt(v[1] * v[1] + v[2] * v[2] + v[3] * v[3]) * S.MetresPerUnit() or 0
 	end,
 	-- add a velocity to my skater (m/s, world axes), riding or in the air
 	-- play a recorded clip ({ { t, P, state }, ... }, as PoseOf gives) as a
@@ -2312,7 +2430,7 @@ S.API = {
 	StopClip = function(id) S.StopClip(id) end,
 	Launch = function(v)
 		if S.phase ~= "on" or not (skategm and skategm.Push) then return false end
-		local k = 0.0254 * (S.loadedScale or 1)
+		local k = S.MetresPerUnit()
 		return skategm.Push(v.x / k, v.y / k, v.z / k)
 	end,
 }

@@ -18,7 +18,22 @@ SET.stack = SET.stack or {}
 
 local function CV(name) return GetConVar and GetConVar(name) end
 local function Get(name, d) local c = CV(name) return c and c:GetString() or d end
-local function Set(name, v) RunConsoleCommand(name, tostring(v)) SET.pending = SET.pending or {} SET.pending[name] = { v = tostring(v), t = RealTime() } end
+local function ServerOwned(name)
+	local c = CV(name)
+	return c ~= nil and c.IsFlagSet ~= nil and FCVAR_REPLICATED ~= nil and c:IsFlagSet(FCVAR_REPLICATED)
+end
+local function Set(name, v)
+	if ServerOwned(name) and net and net.Start then
+		net.Start("skategm_admin_cvar")
+		net.WriteString(name)
+		net.WriteString(tostring(v))
+		net.SendToServer()
+	else
+		RunConsoleCommand(name, tostring(v))
+	end
+	SET.pending = SET.pending or {}
+	SET.pending[name] = { v = tostring(v), t = RealTime() }
+end
 -- (a console command lands next frame: what was just set, shown meanwhile)
 local function Now(name, d)
 	local p = SET.pending and SET.pending[name]
@@ -389,6 +404,8 @@ function SET.DisplayPage()
 	rows[#rows + 1] = List.Heading("Other players")
 	rows[#rows + 1] = BoolRow("Name tags over other skaters", "skategm_nametags")
 	rows[#rows + 1] = BoolRow("Show other players' board images", "skategm_show_board_images")
+	rows[#rows + 1] = List.Heading("World")
+	rows[#rows + 1] = BoolRow("Water reflections (streamed maps)", "skategm_water_reflections")
 	return { title = "Display", rows = rows }
 end
 

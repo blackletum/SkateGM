@@ -322,8 +322,9 @@ function S.UpdateSound(key, ent, P, state, now, stale)
 		A = { loops = {}, feet = {}, speed = 0, vz = 0, accel = 0, minVz = 0 }
 		audio[key] = A
 	end
-	local w = P.RIGHT_WHEELFRONT and P.LEFT_WHEELFRONT and P.RIGHT_WHEELBACK and P.LEFT_WHEELBACK
-	local centre = w and (P.RIGHT_WHEELFRONT + P.LEFT_WHEELFRONT + P.RIGHT_WHEELBACK + P.LEFT_WHEELBACK) / 4 or P.HIPS
+	local wheels = S.WheelCentre(P)
+	local w = wheels ~= nil
+	local centre = wheels or P.HIPS
 	-- Only react to a pose that actually changed. The engine ticks at 60 Hz, so
 	-- at higher frame rates (and on the second update in a frame) the pose is
 	-- the same as last time; measuring those frames would read speed as zero.

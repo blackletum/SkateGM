@@ -1,5 +1,14 @@
 # Changelog
 
+## 9.0
+
+- **SkateGM is on the Steam Workshop**: you can get it on Workshop now! Please go subscribe, like, and favorite it for visibility! As with all similar mods, you'll still need to run the installer to use SkateGM, even with the Workshop addon installed.
+- **All of Port Carverton in one map** (`sgm_skate3_portcarverton`): University, Downtown and Industrial, streamed in around you!
+    - The map (`LB` + `Y`) shows each district from above. Press `X` to switch the next one.
+    - Turn water reflections off in Settings > Display if your frame rate is low.
+- **New San Vanelona from Skate 2** (`sgm_skate2_newsanvan`): the installer builds it from your Skate 2 dump.
+- Gameplay feels closer to Skate 3, from the latest engine fixes upstream.
+
 ## 8.1
 
 - **Skate 3 music while you skate**: the installer now decodes the soundtrack from your game files.

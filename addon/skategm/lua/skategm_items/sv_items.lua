@@ -45,7 +45,7 @@ function Arena:Has(ply)
 	return false
 end
 
-function Arena:Pos(ply) return ply.SkateGMHips or ply:GetPos() end
+function Arena:Pos(ply) return SkateGMSkaterAbs(ply) end
 
 function Arena:Forward(ply)
 	local h = self.hist[ply]
@@ -79,14 +79,15 @@ function Arena:Freeze(ply, seconds)
 end
 
 function Arena:Give(ply, id)
-	self.holding[ply] = { id = id, uses = IT.Get(id).uses }
-	Send({ k = "hold", e = ply:EntIndex(), id = id, uses = self.holding[ply].uses })
+	self.holding[ply] = { id = id, uses = IT.Get(id).uses, e = ply:EntIndex() }
+	Send({ k = "hold", a = self.id, e = ply:EntIndex(), id = id, uses = self.holding[ply].uses })
 end
 
 function Arena:Drop(ply)
-	if not self.holding[ply] then return end
+	local h = self.holding[ply]
+	if not h then return end
 	self.holding[ply] = nil
-	if IsValid(ply) then Send({ k = "hold", e = ply:EntIndex() }) end
+	Send({ k = "hold", a = self.id, e = h.e })
 end
 
 function Arena:Public()
@@ -222,7 +223,7 @@ function SV.Use(ply, a, m)
 	if not ok then ErrorNoHalt("[SkateGM items] " .. h.id .. ": " .. tostring(used) .. "\n") return end
 	if used == false then return end
 	h.uses = h.uses - 1
-	if h.uses <= 0 then a:Drop(ply) else Send({ k = "hold", e = ply:EntIndex(), id = h.id, uses = h.uses }) end
+	if h.uses <= 0 then a:Drop(ply) else Send({ k = "hold", a = a.id, e = h.e, id = h.id, uses = h.uses }) end
 end
 
 net.Receive(IT.NET, function(len, ply)
@@ -246,7 +247,7 @@ hook.Add("PlayerInitialSpawn", "skategm_items", function(ply)
 		if not IsValid(ply) then return end
 		for _, a in pairs(SV.arenas) do
 			Send(a:Public(), ply)
-			for holder, h in pairs(a.holding) do if IsValid(holder) then Send({ k = "hold", e = holder:EntIndex(), id = h.id, uses = h.uses }, ply) end end
+			for holder, h in pairs(a.holding) do if IsValid(holder) then Send({ k = "hold", a = a.id, e = h.e, id = h.id, uses = h.uses }, ply) end end
 		end
 	end)
 end)

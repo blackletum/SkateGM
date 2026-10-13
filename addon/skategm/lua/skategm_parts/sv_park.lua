@@ -34,11 +34,12 @@ function PARK.Placement(def, pos, yaw, others, settings)
 	return npos, nyaw, joined ~= nil
 end
 
--- the other parts near e, as { id, pos, yaw }
+-- the other parts near e, as { id, pos, yaw } (absolute positions)
 function PARK.Neighbours(e, radius)
+	local SPACE = SKATEGM_SPACE
 	local out = {}
-	for _, o in ipairs(ents.FindInSphere(e:GetPos(), radius or 800)) do
-		if o ~= e and PARK.IsPart(o) then out[#out + 1] = { id = o.PartId, pos = o:GetPos(), yaw = o:GetAngles().y } end
+	for _, o in ipairs(SPACE.FindInSphere(SPACE.Abs(e), radius or 800)) do
+		if o ~= e and PARK.IsPart(o) then out[#out + 1] = { id = o.PartId, pos = SPACE.Abs(o), yaw = o:GetAngles().y } end
 	end
 	return out
 end
@@ -47,9 +48,8 @@ function PARK.Snap(e, ply)
 	if not PARK.IsPart(e) then return false end
 	local def = P.Get(e.PartId)
 	if not def then return false end
-	local pos, yaw, joined = PARK.Placement(def, e:GetPos(), e:GetAngles().y, PARK.Neighbours(e), PARK.Settings(ply))
-	e:SetPos(pos)
-	e:SetAngles(Angle(0, yaw, 0))
+	local pos, yaw, joined = PARK.Placement(def, SKATEGM_SPACE.Abs(e), e:GetAngles().y, PARK.Neighbours(e), PARK.Settings(ply))
+	SKATEGM_SPACE.Place(e, pos, Angle(0, yaw, 0))
 	local phys = e:GetPhysicsObject()
 	if IsValid(phys) then
 		phys:EnableMotion(false)
@@ -77,7 +77,7 @@ function PARK.Collect(origin, yaw)
 	local out = {}
 	for _, e in ipairs(ents.GetAll()) do
 		if PARK.IsPart(e) then
-			local d = P.Turn(e:GetPos() - origin, -yaw)
+			local d = P.Turn(SKATEGM_SPACE.Abs(e) - origin, -yaw)
 			out[#out + 1] = { id = e.PartId, x = d.x, y = d.y, z = d.z, yaw = (e:GetAngles().y - yaw) % 360 }
 		end
 	end
@@ -87,7 +87,7 @@ end
 function PARK.Save(ply, name, origin, yaw)
 	name = SafeName(name)
 	if not name then return false, "give the park a name" end
-	local parts = PARK.Collect(origin or ply:GetPos(), yaw or ply:EyeAngles().y)
+	local parts = PARK.Collect(origin or SKATEGM_SPACE.Abs(ply), yaw or ply:EyeAngles().y)
 	if #parts == 0 then return false, "there are no park parts to save" end
 	file.CreateDir(PARK.DIR)
 	file.Write(PARK.DIR .. "/" .. name .. ".json", util.TableToJSON({ version = 1, parts = parts }, true))
@@ -107,10 +107,13 @@ function PARK.Load(ply, name, origin, yaw)
 		if def then
 			local e = ents.Create("skategm_part_" .. p.id)
 			if IsValid(e) then
-				e:SetPos(origin + P.Turn(Vector(p.x, p.y, p.z), yaw))
+				local at = origin + P.Turn(Vector(p.x, p.y, p.z), yaw)
+				e.SkateGMCellFrom = ply
+				e:SetPos(SKATEGM_SPACE.ToLocal(ply, at))
 				e:SetAngles(Angle(0, (p.yaw + yaw) % 360, 0))
 				e:Spawn()
 				e:Activate()
+				SKATEGM_SPACE.Place(e, at)
 				if undo then undo.AddEntity(e) end
 				if IsValid(ply) and ply.AddCleanup then ply:AddCleanup("skategm_parts", e) end
 				made = made + 1
@@ -160,7 +163,7 @@ concommand.Add("skategm_park_load", function(ply, _, args)
 	if not Allowed(ply) then return Reply(ply, "only the host and admins can load parks") end
 	if not IsValid(ply) then return end
 	local origin, yaw = PARK.ArgsOrigin(args)
-	if not origin then origin, yaw = ply:GetEyeTrace().HitPos, ply:EyeAngles().y end
+	if not origin then origin, yaw = SKATEGM_SPACE.FromLocal(ply, ply:GetEyeTrace().HitPos), ply:EyeAngles().y end
 	local _, msg = PARK.Load(ply, args[1], origin, yaw)
 	Reply(ply, msg)
 end)

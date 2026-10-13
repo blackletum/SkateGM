@@ -1,6 +1,6 @@
 -- Minimal GMod math mock with Source conventions (mathlib AngleMatrix / MatrixAngles)
-local V = {} V.__index = V
-function Vector(x, y, z) if type(x) == "string" then local a, b, c = x:match("(%S+)%s+(%S+)%s+(%S+)") x, y, z = tonumber(a), tonumber(b), tonumber(c) end if type(x) == "table" then return setmetatable({ x = x.x, y = x.y, z = x.z }, V) end return setmetatable({ x = x or 0, y = y or 0, z = z or 0 }, V) end
+local V = {} V.__index = function(t, k) if k == 1 then return rawget(t, "x") elseif k == 2 then return rawget(t, "y") elseif k == 3 then return rawget(t, "z") end return V[k] end
+function Vector(x, y, z) if type(x) == "string" then local a, b, c = x:match("(%S+)%s+(%S+)%s+(%S+)") x, y, z = tonumber(a), tonumber(b), tonumber(c) end if type(x) == "Vector" or type(x) == "table" then return setmetatable({ x = x.x, y = x.y, z = x.z }, V) end return setmetatable({ x = x or 0, y = y or 0, z = z or 0 }, V) end
 V.__add = function(a, b) return Vector(a.x + b.x, a.y + b.y, a.z + b.z) end
 V.__sub = function(a, b) return Vector(a.x - b.x, a.y - b.y, a.z - b.z) end
 V.__mul = function(a, b) if type(a) == "number" then a, b = b, a end return Vector(a.x * b, a.y * b, a.z * b) end
@@ -19,6 +19,14 @@ function V:Div(s) self.x, self.y, self.z = self.x / s, self.y / s, self.z / s en
 
 local A = {} A.__index = A
 function Angle(p, y, r) return setmetatable({ p = p or 0, y = y or 0, r = r or 0 }, A) end
+local rawtype = type
+function type(x)
+	local mt = rawtype(x) == "table" and getmetatable(x)
+	if mt == V then return "Vector" elseif mt == A then return "Angle" end
+	return rawtype(x)
+end
+function isvector(x) return type(x) == "Vector" end
+function isangle(x) return type(x) == "Angle" end
 local function rad(d) return math.rad(d) end
 local function AngleRot(a) -- 3x3 rows, columns = forward, left, up
 	local sp, cp = math.sin(rad(a.p)), math.cos(rad(a.p))
@@ -186,3 +194,4 @@ end
 do local frame = 0 FrameNumber = FrameNumber or function() frame = frame + 1 return frame end end
 LerpVector = LerpVector or function(t, a, b) return a + (b - a) * t end
 LerpAngle = LerpAngle or function(t, a, b) return Angle(a.p + (b.p - a.p) * t, a.y + (b.y - a.y) * t, a.r + (b.r - a.r) * t) end
+dofile("../../addon/skategm/lua/skategm/sh_space.lua")

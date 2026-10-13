@@ -49,9 +49,9 @@ if SERVER then
 	-- axis): its normal, or nil while it's in the air
 	function ENT:Ground()
 		local pos, up = self:GetPos(), self:GetUp()
-		local tr = util.TraceLine({ start = pos, endpos = pos - up * (-self.BOTTOM + 4), filter = self, mask = MASK_SOLID })
+		local tr = SKATEGM_SPACE.TraceIn({ start = pos, endpos = pos - up * (-self.BOTTOM + 4), filter = self, mask = MASK_SOLID }, SKATEGM_SPACE.FrameOf(self))
 		if tr.Hit then return tr.HitNormal, true end
-		tr = util.TraceLine({ start = pos, endpos = pos - Vector(0, 0, 8), filter = self, mask = MASK_SOLID })
+		tr = SKATEGM_SPACE.TraceIn({ start = pos, endpos = pos - Vector(0, 0, 8), filter = self, mask = MASK_SOLID }, SKATEGM_SPACE.FrameOf(self))
 		if tr.Hit then return tr.HitNormal, false end
 	end
 

@@ -39,7 +39,7 @@ function S.Boost(amount)
 	local p = skategm.Poll()
 	local vel = p.vel and Vector(p.vel[1], p.vel[2], 0) or Vector()
 	local dir
-	if vel:Length() * 0.0254 * (S.loadedScale or 1) > 1.0 then
+	if vel:Length() * S.MetresPerUnit() > 1.0 then
 		dir = vel:GetNormalized()
 	elseif S.P and S.P.TRUCK_FRONT and S.P.TRUCK_BACK then
 		dir = S.P.TRUCK_FRONT - S.P.TRUCK_BACK
@@ -47,7 +47,7 @@ function S.Boost(amount)
 		dir = dir:GetNormalized()
 	end
 	if not dir or dir:LengthSqr() < 0.5 then return false end
-	local units = (amount or cvBoost:GetFloat()) / (0.0254 * (S.loadedScale or 1))
+	local units = (amount or cvBoost:GetFloat()) / S.MetresPerUnit()
 	return skategm.Push(dir.x * units, dir.y * units, 0)
 end
 concommand.Add("skategm_boost", function(_, _, args)
@@ -74,7 +74,6 @@ function S.TraceThink(p, now)
 	if not tr or not p or not p.pos then return end
 	if p.tick and p.tick == tr.lastTick then return end
 	tr.lastTick = p.tick
-	local scale = S.loadedScale or 1
 	-- speed from how far the skater actually moved (the engine's velocity output
 	-- isn't the skater's during runouts and bails - it read 68 m/s on foot)
 	local here = S.anchor or (S.P and S.P.HIPS) or Vector(p.pos[1], p.pos[2], p.pos[3])
@@ -83,7 +82,7 @@ function S.TraceThink(p, now)
 		vel = (here - tr.lastPos) / ((p.tick - tr.lastTickSeen) / 60)
 	end
 	tr.lastPos, tr.lastTickSeen = Vector(here.x, here.y, here.z), p.tick
-	local row = { t = now - tr.start, speed = vel:Length() * 0.0254 * scale, climb = vel.z * 0.0254 * scale,
+	local row = { t = now - tr.start, speed = vel:Length() * S.MetresPerUnit(), climb = vel.z * S.MetresPerUnit(),
 		z = S.anchor and S.anchor.z or p.pos[3], pitch = BoardPitch(S.P), state = p.state or "?" }
 	if #tr.rows % 3 == 0 then
 		local u = S.UnderBoard()

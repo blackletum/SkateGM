@@ -69,7 +69,7 @@ end
 
 local function GroundBelow(p)
 	if not (util and util.TraceLine) then return nil end
-	local tr = util.TraceLine({ start = p, endpos = p - Vector(0, 0, 400), mask = MASK_SOLID_BRUSHONLY })
+	local tr = (SkateGMTraceWorld or util.TraceLine)({ start = p, endpos = p - Vector(0, 0, 400), mask = MASK_SOLID_BRUSHONLY })
 	return tr.Hit and (p.z - tr.HitPos.z) or 400
 end
 

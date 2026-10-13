@@ -1,0 +1,37 @@
+[h1]Skate 3 in Garry's Mod[/h1]
+
+SkateGM runs Skate 3's real board physics, tricks and scoring inside Garry's Mod, on any map and with friends. It comes with 20+ minigames, a park editor, a replay editor, Skate 3's soundtrack, and a gamemode built for skating.
+
+[b]It doesn't include anything from Skate 3.[/b] It reads the game files from your own copy, on your own PC.
+
+[h2]You need the installer too[/h2]
+The Workshop can't carry the engine module (a .dll) or anything from the game, so this item is only half of SkateGM:
+[olist]
+[*]Subscribe here (the add-on, the gamemode and the warehouse map; Steam keeps it up to date).
+[*]Download [b]SkateGM-Setup.exe[/b] from [url=https://github.com/the-schwilliam/SkateGM/releases/latest]the latest release[/url], close Garry's Mod, run it and choose your Skate 3 disc image (.iso) or default.xex.
+[/olist]
+If SkateGM says its engine module is older than the add-on, run the newest installer again.
+
+[h2]What you need[/h2]
+[list]
+[*]Garry's Mod on the [b]x86-64 branch[/b]: right-click Garry's Mod > Properties > Betas > x86-64.
+[*]Your own copy of [b]Skate 3 for the Xbox 360[/b], dumped by you (the .iso, or a folder with default.xex). Skate 2 too, for New San Vanelona.
+[*]A controller works best (Xbox, PlayStation, Switch Pro and most others). A keyboard works too.
+[*]Windows.
+[/list]
+Controller not working? Turn off Steam Input for Garry's Mod: Properties > Controller > Disable Steam Input.
+
+[h2]Play[/h2]
+[list]
+[*][b]The SkateGM gamemode:[/b] pick it from the gamemode list; everyone skates.
+[*][b]Any other gamemode:[/b] type [i]bind j skategm_toggle[/i] in the console once; J switches Skater mode on and off.
+[/list]
+Hold LB while skating to see the extras: markers, minigames, the map, settings, replays and the park editor.
+
+[h2]Maps[/h2]
+The installer can build Skate 3's parks from your disc, and all of Port Carverton (University, Downtown and Industrial) streamed in as you skate, plus New San Vanelona from Skate 2. Nothing from the games is downloaded or shared: every PC builds the same maps from its own disc.
+
+[h2]Credits[/h2]
+SkateGM is built on [url=https://github.com/SK8-ENGINE/skate-3-rust-engine]SK8-ENGINE/skate-3-rust-engine[/url] and [url=https://github.com/chasmlol/2010-rust-rewrite-mashup]2010 Rust Rewrite Mashup[/url]. Full credits, source and help: [url=https://github.com/the-schwilliam/SkateGM]github.com/the-schwilliam/SkateGM[/url] and [url=https://discord.gg/cMYSu9ywf]the Discord[/url].
+
+Skate 3 is a trademark of Electronic Arts. SkateGM isn't made or endorsed by EA.

@@ -3,8 +3,11 @@ use super::{State,math::{self,V},profiles::Profile,torque};
 use crate::{physics::{skeleton_animation_record::AnimationPartTransform,
     skeleton_body::SkeletonBody},trigonometry};
 pub fn update(state:&mut State,body:&mut SkeletonBody,physical_com:V,
-    effective:&AnimationPartTransform,ground_axis_464:V,profile:&Profile,
+    effective:&AnimationPartTransform,processed:&crate::player::input_phase::ProcessedPhysicsInput,profile:&Profile,
     animation_to_world:&AnimationPartTransform,animation_pose:&[AnimationPartTransform;24]) {
+    // upstream: 82D3D734 reads ProcessedPhysIn+464, NOT WipeoutState+464 (a world
+    // position, which reversed rolling at different places)
+    let ground_axis_464 = processed.vectors_464_480_496_512_528[0].map(f32::from_bits);
     state.angular_velocity=torque::angular_velocity(
         &body.record,&body.definition.animation_masses.fractional);
     let speed=math::length(state.velocity);

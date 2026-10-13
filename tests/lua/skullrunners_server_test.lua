@@ -1,4 +1,5 @@
 dofile("gmock.lua")
+function SkateGMSkaterAbs(ply) return ply.SkateGMHips or ply:GetPos() end
 local roles = {}
 local cur
 util = { AddNetworkString = function() end, TableToJSON = function(t) return t end, JSONToTable = function(t) return t end }

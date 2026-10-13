@@ -101,37 +101,7 @@ impl PlayerControls {
         );
         self.offboard_axes = axes;
         self.offboard_direction = axes.map(|v| [v[0], 0., v[1], 0.]);
-        //gm_sk8 addition: the bail's left stick (WipeoutControlX/Y) is read
-        //as a world-horizontal direction (profiles::prepare dots it with
-        //the skater's world forward/right), but only the offboard branch of
-        //the camera remap was ported, so raw pad axes went in and the bail
-        //controls turned with the map: up flipped you backwards facing one
-        //way. Remap them through the camera as offboard movement is.
-        if physical.state.category_12 == 300 {
-            if let Some(frame) = camera.frame.as_ref() {
-                let world = camera_relative_axes([map.value(64), map.value(65)], frame.basis.columns);
-                self.replace_wipeout_control(world);
-            }
-        }
         Ok(())
-    }
-
-    fn replace_wipeout_control(&mut self, world: [f32; 2]) {
-        let present = |name: &str, intents: &[RidingIntent]| intents.iter().any(|i| i.name == name);
-        let x_on = present("WipeoutControlX", &self.intents);
-        let y_on = present("WipeoutControlY", &self.intents);
-        if !(x_on || y_on) {
-            return;
-        }
-        self.intents.retain(|i| i.name != "WipeoutControlX" && i.name != "WipeoutControlY");
-        self.action_intents.remove("WipeoutControlX");
-        self.action_intents.remove("WipeoutControlY");
-        for (name, value) in [("WipeoutControlX", world[0]), ("WipeoutControlY", world[1])] {
-            if value != 0.0 {
-                self.intents.push(RidingIntent { name, value });
-                self.action_intents.insert(name, value);
-            }
-        }
     }
 
     /// Parent must pass this SAME sampled mapping into input_phase::advance.
@@ -192,11 +162,18 @@ impl PlayerControls {
             ));
         // gm_sk8 addition: D-pad gestures (taunts)
         self.intents.extend(skate_core::input::gameplay_gestures::produce(&self.controller));
-        self.intents.extend(wipeout_intentions::produce(
-            &self.controller,
-            self.actor_flags,
-            physical_capabilities,
-        ));
+        // gm_sk8 addition (from upstream 84142e7): PC bail steering reverses the horizontal control
+        // at the intent boundary; the recovered producer/torque keep their signs.
+        self.intents.extend(
+            wipeout_intentions::produce(&self.controller, self.actor_flags, physical_capabilities)
+                .into_iter()
+                .map(|mut intent| {
+                    if intent.name == "WipeoutControlX" {
+                        intent.value = -intent.value;
+                    }
+                    intent
+                }),
+        );
         self.intents
             .extend(skate_core::input::anticipation_intentions::produce(
                 &self.controller,

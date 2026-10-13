@@ -433,7 +433,7 @@ function IM.Think()
 	local want = p ~= nil and not ground
 	if want ~= (IM.waiting or false) then
 		IM.waiting = want or nil
-		if skategm.SetFrozen and not S.frozen then skategm.SetFrozen(want and 1 or 0) end
+		S.API.Freeze(want, "infmap")
 	end
 end
 

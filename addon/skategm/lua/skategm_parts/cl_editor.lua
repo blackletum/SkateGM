@@ -109,11 +109,13 @@ end
 
 function ED.IsPart(e) return IsValid(e) and e.SkateGMPart == true and e.PartId ~= nil end
 
--- the other parts near pos, as { id, pos, yaw, ent }
+-- the other parts near pos, as { id, pos, yaw, ent } (my view's frame; the
+-- wire carries absolute positions)
 function ED.Neighbours(pos, except)
+	local SPACE = SKATEGM_SPACE
 	local out = {}
-	for _, e in ipairs(ents.FindInSphere(pos, 1200)) do
-		if e ~= except and ED.IsPart(e) then out[#out + 1] = { id = e.PartId, pos = e:GetPos(), yaw = e:GetAngles().y, ent = e } end
+	for _, e in ipairs(SPACE.FindInSphere(SPACE.FromView(pos), 1200)) do
+		if e ~= except and ED.IsPart(e) then out[#out + 1] = { id = e.PartId, pos = SPACE.View(e), yaw = e:GetAngles().y, ent = e } end
 	end
 	return out
 end
@@ -126,7 +128,7 @@ function ED.Placement(def, hit, yaw, neighbours, settings)
 end
 
 function ED.Trace(from, dir, ignore)
-	return util.TraceLine({ start = from, endpos = from + dir * ED.AIM_RANGE, mask = MASK_SOLID, filter = ignore })
+	return (SkateGMTraceWorld or util.TraceLine)({ start = from, endpos = from + dir * ED.AIM_RANGE, mask = MASK_SOLID, filter = ignore })
 end
 
 function ED.UpdateAim()
@@ -150,7 +152,7 @@ end
 
 function ED.Pickup(e)
 	if not ED.IsPart(e) then return end
-	ED.carry = { ent = e, id = e.PartId, from = e:GetPos(), fromYaw = e:GetAngles().y }
+	ED.carry = { ent = e, id = e.PartId, from = SKATEGM_SPACE.View(e), fromYaw = e:GetAngles().y }
 	ED.yaw = e:GetAngles().y
 	e:SetNoDraw(true)
 end
@@ -167,14 +169,14 @@ function ED.PlaceGhost()
 	if ED.carry then
 		net.Start("skategm_editor_move")
 		net.WriteEntity(ED.carry.ent)
-		net.WriteVector(g.pos)
+		net.WriteVector(SKATEGM_SPACE.FromView(g.pos))
 		net.WriteFloat(g.yaw)
 		net.SendToServer()
 		ED.CancelCarry()
 	else
 		net.Start("skategm_editor_place")
 		net.WriteString(g.def.id)
-		net.WriteVector(g.pos)
+		net.WriteVector(SKATEGM_SPACE.FromView(g.pos))
 		net.WriteFloat(g.yaw)
 		net.SendToServer()
 	end
@@ -285,7 +287,7 @@ function ED.Think(pad, now, dt)
 	if now - (ED.lastCam or 0) > ED.CAM_RATE then
 		ED.lastCam = now
 		net.Start("skategm_editor_cam", true)
-		net.WriteVector(ED.cam.pos)
+		net.WriteVector(SKATEGM_SPACE.FromView(ED.cam.pos))
 		net.WriteAngle(ED.cam.ang)
 		net.SendToServer()
 	end
@@ -337,7 +339,7 @@ function ED.DrawMelons()
 		end
 		if IsValid(r.model) and r.pos then
 			local bob = math.sin(RealTime() * 2.2) * 2
-			local pos = r.pos + Vector(0, 0, bob)
+			local pos = SKATEGM_SPACE.ToView(r.pos) + Vector(0, 0, bob)
 			r.model:SetPos(pos)
 			r.model:SetAngles(Angle(r.ang.p, r.ang.y + 90, 0))
 			r.model:DrawModel()
@@ -382,7 +384,7 @@ function ED.DrawAimed()
 	local def = P.Get(e.PartId)
 	if not def then return end
 	local shape = P.Shape(def)
-	render.DrawWireframeBox(e:GetPos(), e:GetAngles(), shape.mins - Vector(1, 1, 0), shape.maxs + Vector(1, 1, 1), ED.selected and WHITE or YELLOW, true)
+	render.DrawWireframeBox(SKATEGM_SPACE.View(e), e:GetAngles(), shape.mins - Vector(1, 1, 0), shape.maxs + Vector(1, 1, 1), ED.selected and WHITE or YELLOW, true)
 end
 
 local function Text(t, font, x, y, col, ax) PAD.Text(t, font, x, y, col, ax or TEXT_ALIGN_CENTER) end

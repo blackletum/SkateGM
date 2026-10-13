@@ -31,7 +31,7 @@ end
 
 function C.MelonPos(st)
 	local e = st.melon and Entity(st.melon)
-	if IsValid(e) then return e:GetPos() end
+	if IsValid(e) then return SKATEGM_SPACE.View(e) end
 end
 
 -- my time with the melon so far (the King's runs on between server updates)

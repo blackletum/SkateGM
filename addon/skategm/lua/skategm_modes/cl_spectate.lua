@@ -81,7 +81,7 @@ function SP.Aim()
 	if P then return P.HIPS + Vector(0, 0, 10) end
 	if IsValid(ply) and ply.GetPos then
 		local p = ply:GetPos()
-		if p and (p.x ~= 0 or p.y ~= 0 or p.z ~= 0) then return p + Vector(0, 0, 40) end
+		if p and (p.x ~= 0 or p.y ~= 0 or p.z ~= 0) then return SKATEGM_SPACE.View(ply, p) + Vector(0, 0, 40) end
 	end
 end
 

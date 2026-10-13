@@ -32,6 +32,26 @@ pub enum PhysicalStateId {
     Teleporting = 702,
 }
 
+// gm_sk8 addition: the state's kind, one place (the host used to match the
+// Debug name's text)
+impl PhysicalStateId {
+    pub fn is_airborne(self) -> bool {
+        matches!(self, Self::PhysicsAir | Self::KnownAir | Self::PhysicsAirSecondary | Self::BipedAir)
+    }
+    pub fn is_biped(self) -> bool {
+        matches!(self, Self::BipedGround | Self::BipedAir)
+    }
+    pub fn is_grinding(self) -> bool {
+        matches!(self, Self::GrindBoardslide | Self::GrindFiftyFifty | Self::GrindTipslide | Self::GrindFiveO | Self::GrindBackslash | Self::GrindDarkslide)
+    }
+    pub fn is_wipeout(self) -> bool {
+        matches!(self, Self::WipeoutGround)
+    }
+    pub fn is_teleporting(self) -> bool {
+        matches!(self, Self::Teleporting)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UnknownPhysicalState(pub u32);
 

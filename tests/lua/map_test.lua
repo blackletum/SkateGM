@@ -104,3 +104,84 @@ check("an ordinary map: the screen says Map", MAP.Title() == "Map")
 mapName = "sgm_skate3_maloof"
 globals.SkateGMTitle = "Maloof Money Cup"
 check("a Skate 3 map names its place (from the map's own info entity, via the server)", MAP.Title() == "Skate 3: Maloof Money Cup")
+mapName = "sgm_skate2_newsanvan"
+globals.SkateGMTitle = "New San Vanelona"
+check("a Skate 2 map says Skate 2", MAP.Title() == "Skate 2: New San Vanelona")
+
+local focus
+local frameOff = Vector(0, 0, 0)
+SkateGM.stream = {
+	on = true,
+	Districts = function() return { { title = "University", spawn = { 100, 200, 10 } }, { title = "Downtown", spawn = { 270000, -20000, 1300 } } } end,
+	Here = function() return 1 end,
+	Frame = function() return frameOff end,
+	SetFocus = function(v) focus = v end,
+	FloorBelow = function(v) return Vector(v.x, v.y, 0) end,
+	Travel = function() api.travelled = true end,
+}
+api.tele, api.travelled = nil, nil
+frame(B.LB)
+frame(bit.bor(B.LB, B.Y))
+frame(0)
+check("streamed map with districts: the map shows the one you're in", MAP.DistrictTitle() == "University" and MAP.Active())
+check("... and what streams in follows the map's camera", focus and focus.x == MAP.centre.x)
+local legend = MAP.Legend()
+local hasX = false
+for _, r in ipairs(legend) do if r.text == "Next district" then hasX = true end end
+check("... X: next district in the legend", hasX)
+press(B.X)
+check("X moves the map over the next district, no teleport", MAP.Active() and MAP.DistrictTitle() == "Downtown" and not api.tele and not api.travelled
+	and MAP.centre.x == 270000 and MAP.centre.y == -20000 and MAP.zoom >= MAP.ZOOM_DISTRICT)
+frame(0)
+check("... streaming around it", focus and focus.x == 270000)
+press(B.A)
+check("A then teleports to the dot there", api.tele and api.tele[1].x == 270000 and not MAP.Active())
+check("... and streaming goes back to following you", focus == nil)
+frame(B.LB)
+frame(bit.bor(B.LB, B.Y))
+frame(0)
+press(B.X)
+press(B.X)
+check("X wraps round to the first district", MAP.DistrictTitle() == "University")
+press(B.B)
+SkateGM.stream.Districts = function() return { { title = "New San Vanelona", spawn = { 0, 0, 0 } } } end
+frame(B.LB)
+frame(bit.bor(B.LB, B.Y))
+frame(0)
+hasX = false
+for _, r in ipairs(MAP.Legend()) do if r.text == "Next district" then hasX = true end end
+check("a map with one district has no X", not hasX)
+press(B.B)
+
+local trace = util.TraceLine
+util.TraceLine = function(t)
+	if t.endpos.z > t.start.z then return { Hit = true, HitSky = true, HitPos = Vector(t.start.x, t.start.y, 4000) } end
+	return trace(t)
+end
+SkateGM.stream = nil
+frame(B.LB)
+frame(bit.bor(B.LB, B.Y))
+frame(0)
+check("the map opens at the highest cut: just under the sky", MAP.cut == 4000 - 8 and MAP.top == MAP.cut)
+local before = MAP.cut
+press(B.DOWN)
+check("... cutting down takes big steps while far above the ground", before - MAP.cut >= 512 and (before - MAP.cut) % MAP.CUT_STEP == 0)
+for _ = 1, 40 do press(B.DOWN) end
+check("... small ones near it", MAP.CUT_STEP >= 0 and MAP.CutStep() == MAP.CUT_STEP)
+for _ = 1, 60 do press(B.UP) end
+check("... and never above the top", MAP.cut == MAP.top)
+press(B.B)
+util.TraceLine = trace
+SkateGM.stream = {
+	on = true, TopZ = function() return 9000 end, Frame = function() return Vector(0, 0, 0) end,
+	Districts = function() return { { title = "University", spawn = { 100, 200, 10 } }, { title = "Downtown", spawn = { 270000, -20000, 1300 } } } end,
+	Here = function() return 1 end, SetFocus = function() end, FocusReady = function() return false end,
+	FloorBelow = function(v) return Vector(v.x, v.y, 0) end,
+}
+frame(B.LB)
+frame(bit.bor(B.LB, B.Y))
+frame(0)
+check("a streamed map's top cut: above its tallest tile", MAP.cut == 9000 + MAP.CUT_ABOVE)
+press(B.X)
+check("the next district opens at the top cut too, loading until it shows", MAP.cut == MAP.top and MAP.loadingSince ~= nil)
+press(B.B)

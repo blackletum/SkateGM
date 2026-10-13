@@ -1,6 +1,12 @@
 local M={}
 function M.New() return {frames={}} end
 function M.Reset(b) b.frames={} b.tick=nil end
+function M.Shift(b,delta)
+	for _,f in ipairs(b.frames) do
+		for name,v in pairs(f.P) do f.P[name]=v-delta end
+		f.cam.pos=f.cam.pos-delta
+	end
+end
 function M.Push(b,p,P,now)
 	if not p.cam or not P or not P.HIPS then return end
 	if p.tick~=nil and p.tick==b.tick then return end

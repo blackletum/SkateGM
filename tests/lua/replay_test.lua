@@ -353,3 +353,13 @@ do
 	print(string.format("%-66s %s", "camcorder grain jumps each frame (doesn't drift: few tiny steps)", small < 15 and "OK" or "<-- WRONG"))
 	print(string.format("%-66s %s", "camcorder grain is soft (alpha 12 or less)", R.CAMCORDER.grain <= 12 and "OK" or "<-- WRONG"))
 end
+
+local frameNow = Vector(8192, 0, 0)
+S.CurrentFrame = function() return frameNow end
+local crossClip = { { t = 0, P = { HIPS = Vector(10, 20, 30) } }, { t = 0.05, P = { HIPS = Vector(11, 20, 30) } } }
+local saved = R.Encode(crossClip, { map = "m", date = "d" }, { filter = "none", keys = { { t = 0, mode = "tripod", fov = 75, pos = Vector(5, 5, 5) } } })
+frameNow = Vector(0, 0, 0)
+local back, backMeta = R.Decode(saved)
+check("a replay saved in another cell plays back where it happened", back and back[1].P.HIPS.x == 8202 and back[1].P.HIPS.y == 20)
+check("... its tripod cameras too", backMeta and backMeta.edit.keys[1] and backMeta.edit.keys[1].pos and backMeta.edit.keys[1].pos.x == 8197)
+S.CurrentFrame = nil

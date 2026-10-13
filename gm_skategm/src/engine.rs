@@ -147,7 +147,7 @@ pub fn set_native_rails(natives: Vec<([f32; 3], [f32; 3], Vec<u8>)>) {
 
 /// The map's collision triangles with their retail surface and native edges
 /// (authored::native_triangles), for the engine's collision_map.
-pub fn set_native_triangles(tris: Vec<([[f32; 3]; 3], u32, Option<[u8; 3]>, bool)>) {
+pub fn set_native_triangles<I: IntoIterator<Item = ([[f32; 3]; 3], u32, Option<[u8; 3]>, bool)>>(tris: I) {
     #[cfg(feature = "engine")]
     skate_host::bridge::set_native_triangles(tris);
     #[cfg(not(feature = "engine"))]
@@ -296,7 +296,7 @@ mod real {
         }
     }
     fn airborne(state: &str) -> bool {
-        state.contains("Air")
+        crate::states::airborne(state)
     }
 
     fn convert(p: skate_host::bridge::Pose, session: &Session) -> Pose {

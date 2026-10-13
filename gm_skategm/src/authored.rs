@@ -145,11 +145,11 @@ pub fn native_rails(a: &Authored) -> Vec<([f32; 3], [f32; 3], Vec<u8>)> {
 /// Each triangle's retail surface and native edges, keyed by its corners in
 /// skate space (the engine's collision_map finds an unchanged triangle by
 /// them; a cut one keeps what the engine works out for itself).
-pub fn native_triangles(a: &Authored) -> Vec<([[f32; 3]; 3], u32, Option<[u8; 3]>, bool)> {
+pub fn native_triangles(a: &Authored) -> impl Iterator<Item = ([[f32; 3]; 3], u32, Option<[u8; 3]>, bool)> + '_ {
     a.triangles.iter().enumerate().map(|(i, t)| {
         let e = a.edges.get(i).copied().unwrap_or([0; 4]);
         (t.map(|v| crate::coords::to_skate(v.to_array())), a.surfaces[i], (e[3] & 1 != 0).then_some([e[0], e[1], e[2]]), e[3] & 2 != 0)
-    }).collect()
+    })
 }
 
 pub fn from_pack(bsp: &vbsp::Bsp) -> Option<Result<Authored, String>> {

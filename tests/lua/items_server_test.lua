@@ -1,4 +1,5 @@
 dofile("gmock.lua")
+function SkateGMSkaterAbs(ply) return ply.SkateGMHips or ply:GetPos() end
 SERVER = true
 local T = 100
 function CurTime() return T end

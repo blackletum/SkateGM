@@ -15,6 +15,7 @@ SkateGM = { API = { Allowed = function() return true end, IsSkating = function(p
 local function Player(id, name)
 	local p = { id = id, name = name }
 	function p:EntIndex() return self.id end
+	function p:UserID() return self.id end
 	function p:Nick() return self.name end
 	function p:IsAdmin() return false end
 	function p:ChatPrint(t) chats[#chats + 1] = t end

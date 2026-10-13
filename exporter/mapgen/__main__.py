@@ -14,7 +14,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest='command', required=True)
     b = sub.add_parser('build')
     b.add_argument('--region', action='append', help='region name (default: all)')
-    b.add_argument('--game', required=True, help='extracted Skate 3 folder (holds data/)')
+    b.add_argument('--game', required=True, help='the game: its disc image (.iso), default.xex or extracted folder')
     b.add_argument('--gmod', default=None)
     b.add_argument('--out', required=True, help='folder for the .bsp files')
     b.add_argument('--work', required=True, help='scratch folder (decode cache, build files)')
@@ -29,9 +29,21 @@ def main(argv=None):
     o.add_argument('--game', required=True)
     o.add_argument('--work', required=True)
     o.add_argument('--out', required=True)
-    o.add_argument('--district', action='append', help='e.g. DIST_University (default: the three boroughs)')
+    o.add_argument('--district', action='append', help='e.g. DIST_University (default: the three Port Carverton districts)')
     o.add_argument('--scale', type=float, default=2.0, help='pixels per metre')
+    i = sub.add_parser('icon', help="render a streamed map's icon from a camera (skategm_thumb_here prints one in game)")
+    i.add_argument('--world', required=True, help='e.g. sgm_skate2_newsanvan')
+    i.add_argument('--game', required=True)
+    i.add_argument('--work', required=True)
+    i.add_argument('--addon', required=True, help='the skategm_maps add-on folder')
+    i.add_argument('--view', help='"x y z pitch yaw fov" (default: the world\'s own thumb)')
     a = ap.parse_args(argv)
+    if a.command == 'icon':
+        from . import stream
+        from .source import GameSource
+        view = [float(v) for v in a.view.replace(',', ' ').split()] if a.view else None
+        print(stream.icon(stream.by_name(a.world), GameSource(a.game, Path(a.work) / 'disc'), Path(a.addon), Path(a.work), view))
+        return 0
     if a.command == 'overhead':
         from .overhead import make
         for f in make(a.game, a.work, a.district or ['DIST_University', 'DIST_DownTown', 'DIST_Industrial'], a.out, a.scale):

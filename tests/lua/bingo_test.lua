@@ -14,6 +14,7 @@ SkateGM = { API = { Allowed = function() return true end, IsSkating = function()
 local function Player(id, name)
 	local p = { id = id, name = name }
 	function p:EntIndex() return self.id end
+	function p:UserID() return self.id end
 	function p:Nick() return self.name end
 	function p:IsAdmin() return false end
 	function p:ChatPrint(t) chats[#chats + 1] = t end
@@ -42,13 +43,13 @@ check("start: the same card for everyone, then a countdown", G.phase == "countdo
 BINGO.Think(t + 3.1)
 check("GO", G.phase == "playing")
 BINGO.Command(ben, { cmd = "done", cell = 5 }, t + 4)
-check("the free square can't be claimed", next(G.entries[ben].marks) == nil)
+check("the free square can't be claimed", next(G.entries[SKATEGM_MODES.Key(ben)].marks) == nil)
 BINGO.Command(ben, { cmd = "done", cell = 1 }, t + 4)
 BINGO.Command(ben, { cmd = "done", cell = 1 }, t + 4.1)
 BINGO.Command(ben, { cmd = "done", cell = 99 }, t + 4.2)
 local count = 0
-for _ in pairs(G.entries[ben].marks) do count = count + 1 end
-check("a square ticks once; nonsense squares are ignored", G.entries[ben].marks[1] and count == 1)
+for _ in pairs(G.entries[SKATEGM_MODES.Key(ben)].marks) do count = count + 1 end
+check("a square ticks once; nonsense squares are ignored", G.entries[SKATEGM_MODES.Key(ben)].marks[1] and count == 1)
 BINGO.Command(ben, { cmd = "done", cell = 9 }, t + 5)
 check("square 1 + free middle + square 9: BINGO", G.phase == "results" and G.winner and G.winner.name == "Ben")
 BINGO.Think(t + 5 + BINGO.RESULTS + 0.1)

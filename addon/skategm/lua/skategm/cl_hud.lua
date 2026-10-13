@@ -109,6 +109,7 @@ end
 S.WAIT_FADE, S.WAIT_BLUE = 0.25, Color(120, 220, 255)
 local logoMat
 function S.PaintWait(w, h, now, since, title, sub, logo, progress)
+	if S.stream and S.stream.arrive and not S.stream.painting then return end
 	Fonts()
 	local k = math.Clamp((now - since) / S.WAIT_FADE, 0, 1)
 	local bw = math.floor(math.max(w * 0.3, h * 0.5))
@@ -155,7 +156,7 @@ function S.HudPaint(w, h, now)
 	-- (said only once it lasts: a hold of a few frames flashing it up is worse)
 	if S.pose and S.pose.held then S.heldSince = S.heldSince or now else S.heldSince = nil end
 	if S.heldSince and now - S.heldSince >= S.HELD_SHOW then
-		S.PaintWait(w, h, now, S.heldSince + S.HELD_SHOW, "Waiting for collision to load...", "the ground here is still being built")
+		S.PaintWait(w, h, now, S.heldSince + S.HELD_SHOW, "Loading collision")
 	end
 	local show = cvHud:GetBool()
 	local white = Color(255, 255, 255)

@@ -143,10 +143,10 @@ MELON.Think(t + 20 + MELON.COUNTDOWN)
 MELON.Think(t + 20 + MELON.COUNTDOWN + MELON.FIRST_DROP)
 G.melonEnt.pos = Vector(300, 0, 36)
 MELON.Grab(bob, t + 30)
-bob.gone = true
+CurTime = function() return t + 30.5 end MELON.mode.leaveHandler(bob) bob.gone = true
 MELON.Think(t + 31)
 check("the King disconnects: the melon drops, the game goes on", G.phase == "playing" and G.king == nil and IsValid(G.melonEnt))
-cat.gone = true
+CurTime = function() return t + 31.5 end MELON.mode.leaveHandler(cat) cat.gone = true
 MELON.Think(t + 32)
 check("one skater left: they win", G.phase == "results" and G.winner and G.winner.name == "Host")
 

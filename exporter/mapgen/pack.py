@@ -1,4 +1,8 @@
+import os
+import struct
 from pathlib import Path
+
+AINET_VERSION = 37
 
 
 def pack(tools, bsp, files, out):
@@ -7,10 +11,26 @@ def pack(tools, bsp, files, out):
         for internal, external in sorted(files.items()):
             f.write(internal.replace('\\', '/') + '\n')
             f.write(str(Path(external).resolve()) + '\n')
-    tools.run('bspzip', ['-game', tools.game, '-addorupdatelist', bsp, listing, out])
-    if not Path(out).is_file():
+    out = Path(out)
+    partial = out.with_name(out.name + '.partial')
+    partial.unlink(missing_ok=True)
+    tools.run('bspzip', ['-game', tools.game, '-addorupdatelist', bsp, listing, partial])
+    if not partial.is_file():
         raise RuntimeError('bspzip did not write ' + str(out))
+    os.replace(partial, out)
+    node_graph(out)
     return out
+
+
+def node_graph(bsp):
+    bsp = Path(bsp)
+    with open(bsp, 'rb') as f:
+        head = f.read(8 + 64 * 16 + 4)
+    revision = struct.unpack_from('<i', head, 8 + 64 * 16)[0]
+    graph = bsp.parent / 'graphs' / (bsp.stem + '.ain')
+    graph.parent.mkdir(parents=True, exist_ok=True)
+    graph.write_bytes(struct.pack('<iiii', AINET_VERSION, revision, 0, 0))
+    return graph
 
 
 def extract(tools, bsp, out):

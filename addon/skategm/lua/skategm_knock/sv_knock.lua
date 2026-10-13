@@ -32,7 +32,9 @@ function KNOCK.Hit(ply, ent, vel, now)
 	if not (IsValid(ply) and ply.SkateGM and KNOCK.Knockable(ent)) then return false end
 	if now - (ent.SkateGMKnockAt or -100) < KNOCK.COOLDOWN then return false end
 	local hips = ply.SkateGMHips
-	if not hips or ent:NearestPoint(hips):Distance(hips) > KNOCK.SLACK then return false end
+	if not hips then return false end
+	hips = SkateGMToLocal(ent, hips)
+	if ent:NearestPoint(hips):Distance(hips) > KNOCK.SLACK then return false end
 	if not (vel and vel.x == vel.x and vel.y == vel.y and vel.z == vel.z) then return false end
 	if vel:Length() > KNOCK.MAX_SPEED then vel = vel:GetNormalized() * KNOCK.MAX_SPEED end
 	ent.SkateGMKnockAt = now

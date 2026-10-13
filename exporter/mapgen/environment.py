@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import struct
 import sys
@@ -32,11 +33,11 @@ def _imports():
 
 
 def _collections(source, work):
-    from tools.owned_game.big import BigArchive
+    from .archives import open_archive as BigArchive
     from tools.asset_pipeline.vlt import convert as convert_vlt
     from tools.asset_pipeline.environment import NAMES, Collections
-    db = BigArchive(source.file('data/big/db.big'))
-    out = Path(work) / 'db'
+    db = BigArchive(source.file(source.game.db))
+    out = source.scope(work) / 'db'
     if not (out / 'data/db/skatercollections.vlt').is_file():
         db.extract_entries([e for e in db.entries if Path(e.path).name.lower() in DB_FILES], out, overwrite=True)
     stem = out / 'data/db'
@@ -55,9 +56,17 @@ def _world_row(collections, district):
     return None
 
 
+def _row(source, district, work):
+    if not source.game.world_db:
+        return None
+    return _world_row(_collections(source, work), district)
+
+
 def load(source, district, work):
+    if source.game.sky == 'dome':
+        return dome_sky(source, work)
     _imports()
-    from tools.owned_game.big import BigArchive
+    from .archives import open_archive as BigArchive
     from tools.asset_pipeline.environment import world_environment
     from tools.asset_pipeline.sky import _material, _texture
     import mdl_parser
@@ -67,7 +76,7 @@ def load(source, district, work):
     if row is None:
         return None
     env = world_environment(collections, row['key'])
-    misc = BigArchive(source.file('data/big/miscload.big'))
+    misc = BigArchive(source.file(source.game.misc))
     entries = {e.path: e for e in misc.entries}
     raw = misc.read(entries['data/content/' + env['sky_model'] + '.rx2'])
     model = mdl_parser.parse_rx2(raw)
@@ -108,16 +117,16 @@ def _channel_sets(raw, table):
 
 def water(source, district, work):
     _imports()
-    from tools.owned_game.big import BigArchive
+    from .archives import open_archive as BigArchive
     from tools.asset_pipeline.sky import _texture
     import mdl_parser
     import rx2_parser
     from .scene import Material, Mesh, Texture
-    row = _world_row(_collections(source, work), district)
+    row = _row(source, district, work)
     if row is None or WATER_FIELD not in row['fields']:
         return None
     path = 'data/content/' + row['fields'][WATER_FIELD]['data']
-    misc = BigArchive(source.file('data/big/miscload.big'))
+    misc = BigArchive(source.file(source.game.misc))
     entries = {e.path: e for e in misc.entries}
     if path + '.rx2' not in entries or path + '_Textures.rx2' not in entries:
         return None
@@ -159,12 +168,12 @@ WATER_BAND = 1.0
 
 def _water_model(source, district, work):
     _imports()
-    from tools.owned_game.big import BigArchive
-    row = _world_row(_collections(source, work), district)
+    from .archives import open_archive as BigArchive
+    row = _row(source, district, work)
     if row is None or WATER_FIELD not in row['fields']:
         return None, None
     path = 'data/content/' + row['fields'][WATER_FIELD]['data']
-    misc = BigArchive(source.file('data/big/miscload.big'))
+    misc = BigArchive(source.file(source.game.misc))
     entries = {e.path: e for e in misc.entries}
     if path + '.rx2' not in entries:
         return None, None
@@ -240,3 +249,69 @@ def sea_plane(height, colour, centre, reach, work, steps=8):
     mesh = Mesh('water', positions, np.asarray(faces, np.int64), uvs, normals, name='water')
     return (Texture(texture_id, out, WATER_TILE, WATER_TILE, 'rgba'),
             Material('water', 'water', 'unlit', {'diffuse': texture_id}), [mesh])
+
+
+DOME_RINGS = 19
+DOME_SEGMENTS = 64
+CLOUD_BAND = 35.0
+DOME_BELOW = 10.0
+
+
+def dome(rings=DOME_RINGS, segments=DOME_SEGMENTS, radius=1000.0):
+    positions, uvs = [], []
+    for r in range(rings + 1):
+        el = math.radians(-DOME_BELOW + (90.0 + DOME_BELOW) * r / rings)
+        for s in range(segments + 1):
+            az = 2 * math.pi * s / segments
+            positions.append((radius * math.cos(el) * math.cos(az), radius * math.sin(el), radius * math.cos(el) * math.sin(az)))
+            uvs.append((s / segments, (90.0 - math.degrees(el)) / (90.0 + DOME_BELOW)))
+    faces = []
+    for r in range(rings):
+        for s in range(segments):
+            a, b = r * (segments + 1) + s, r * (segments + 1) + s + 1
+            c, d = a + segments + 1, b + segments + 1
+            faces += [(a, b, d), (a, d, c)]
+    return np.asarray(positions, np.float64), np.asarray(uvs, np.float64), np.asarray(faces, np.int64)
+
+
+def layered_sky(gradient, clouds, height=256):
+    from PIL import Image
+    width = clouds.shape[1]
+    sky_rows = int(round(height * 90.0 / (90.0 + DOME_BELOW)))
+    grad = np.asarray(Image.fromarray(np.ascontiguousarray(gradient[..., :3])).resize((width, sky_rows), Image.BILINEAR), np.float64)
+    out = np.empty((height, width, 3))
+    out[:sky_rows] = grad
+    band = int(round(sky_rows * CLOUD_BAND / 90.0))
+    detail = np.asarray(Image.fromarray(np.ascontiguousarray(clouds[..., :3])).resize((width, band), Image.BILINEAR), np.float64)
+    out[sky_rows - band:sky_rows] = grad[sky_rows - band:] * detail / 128.0
+    out[sky_rows:] = out[sky_rows - 1].mean(0)
+    rgba = np.empty((height, width, 4), np.uint8)
+    rgba[..., :3] = np.clip(np.round(out), 0, 255).astype(np.uint8)
+    rgba[..., 3] = 255
+    return rgba
+
+
+def sun_from(gradient, elevation=35.0):
+    light = gradient[..., :3].astype(np.float64).sum(2)
+    column = int(np.argmax(light[-max(1, len(light) // 4):].sum(0)))
+    az = 2 * math.pi * (column + 0.5) / gradient.shape[1]
+    el = math.radians(elevation)
+    return np.array([math.cos(el) * math.cos(az), math.sin(el), math.cos(el) * math.sin(az)])
+
+
+def dome_sky(source, work):
+    _imports()
+    import rx2_parser
+    from .archives import open_archive
+    misc = open_archive(source.file(source.game.sky_archive))
+    entries = {e.path.lower(): e for e in misc.entries}
+    textures = rx2_parser.parse_rx2(misc.read(entries[source.game.sky_textures.lower()])).textures
+
+    def rgba(i):
+        t = textures[i]
+        return np.frombuffer(t.rgba, np.uint8).reshape(t.height, t.width, 4)
+    clouds, gradient = rgba(source.game.sky_layers[0]), rgba(source.game.sky_layers[1])
+    positions, uvs, faces = dome()
+    horizon = gradient[-max(1, len(gradient) // 8):, :, :3].reshape(-1, 3).mean(0) / 255.0
+    return Sky(sun_from(gradient), 60.0, 2400.0, tuple(float(c) ** 2.2 for c in horizon), 0.6,
+               positions, uvs, faces, layered_sky(gradient, clouds))

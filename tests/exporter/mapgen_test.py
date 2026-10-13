@@ -252,3 +252,53 @@ with tempfile.TemporaryDirectory() as tmp:
     n = vertexlight.clear_prop_padding(a)
     vertexlight.clear_prop_padding(b)
     check("static props' padding byte (vbsp leaves it uninitialised) is cleared: two builds give the same file", n == 3 and a.read_bytes() == b.read_bytes() and a.read_bytes()[-72 + 30] == 6)
+
+from mapgen import games, install as mapinstall
+check("each game's world streams: Skate 3 per district, Skate 2 one archive",
+      games.SKATE3.stream("DIST_University") == games.Stream("data/content/worldDIST_University.big", "DIST_University")
+      and games.SKATE2.stream("BAM") == games.Stream("data/content/worldbam.big", "BAM"))
+check("... and their distant (proxy) streams", games.SKATE3.proxy("DIST_DownTown").archive == "data/content/proxyDowntown_100_Proxy.big"
+      and games.SKATE2.proxy("BAM") == games.Stream("data/content/worldproxy.big", "PROXY") and games.SKATE3.proxy("DIST_X") is None)
+check("a disc's game is found from its files", games.detect(["default.xex", r"data\content\worldbam.big"]) is games.SKATE2
+      and games.detect(["data/big/db.big"]) is games.SKATE3 and games.detect(["x"]) is None)
+with tempfile.TemporaryDirectory() as tmp:
+    two = Path(tmp) / "Skate 2"
+    (two / "data" / "content").mkdir(parents=True)
+    (two / "data" / "content" / "worldbam.big").write_bytes(b"x")
+    src = GameSource(two, Path(tmp) / "cache")
+    check("an extracted Skate 2 is recognised, its district archive the shared one", src.game is games.SKATE2 and src.district("BAM").name == "worldbam.big")
+    check("... each game keeps its own disc cache", src.cache.name == "skate2")
+    by = mapinstall.sources_by_game({"skate2": str(two), "skate3": None}, tmp)
+    check("map installs take a disc per game, missing ones left out", list(by) == ["skate2"])
+r = regions.by_name("sgm_skate3_maloof")
+legacy = __import__("hashlib").sha256(__import__("json").dumps({"build": mapinstall.BUILD_VERSION, "region": {k: v for k, v in __import__("dataclasses").asdict(r).items() if k != "game"}}, sort_keys=True, default=str).encode()).hexdigest()[:16]
+check("Skate 3 maps keep their build keys (no rebuild for the game field)", region_key(r) == legacy)
+check("the catalogue can be asked per game", all(x.game == "skate3" for x in mapinstall.catalog("skate3")) and mapinstall.catalog("skate2") == [x for x in mapinstall.catalog() if x.game == "skate2"])
+
+from mapgen import pack
+with tempfile.TemporaryDirectory() as tmp:
+    bsp = Path(tmp) / "sgm_x.bsp"
+    bsp.write_bytes(b"VBSP" + struct.pack("<i", 21) + bytes(64 * 16) + struct.pack("<i", 1234) + bytes(64))
+    g = pack.node_graph(bsp)
+    check("every built map gets an empty node graph (no 'Node Graph out of date' on load)", g == Path(tmp) / "graphs" / "sgm_x.ain" and struct.unpack("<iiii", g.read_bytes()) == (37, 1234, 0, 0))
+
+from mapgen import textures
+if textures._native_library():
+    img = np.zeros((16, 32, 3), np.uint8)
+    img[..., 0] = 200
+    vtf = textures.native_vtf(img, False, 0x4 | 0x8)
+    w, h, flags = struct.unpack_from("<HHI", vtf, 16)
+    fmt, mips, lfmt, lw, lh = struct.unpack_from("<iBiBB", vtf, 52)
+    check("native VTF: 7.5 header as vtex writes it (DXT1, 6 mips, 16x8 thumbnail, clamp flags)",
+          vtf[:4] == b"VTF\0" and struct.unpack_from("<II", vtf, 4) == (7, 5) and (w, h, flags, fmt, mips, lfmt, lw, lh) == (32, 16, 0xC, 13, 6, 13, 16, 8))
+    check("... sized exactly: header + thumbnail + every mip", len(vtf) == 104 + 64 + sum(max(1, (max(1, 32 >> i) + 3) // 4) * max(1, (max(1, 16 >> i) + 3) // 4) * 8 for i in range(6)))
+    rgba = np.zeros((8, 8, 4), np.uint8)
+    rgba[..., 3] = 128
+    a = textures.native_vtf(rgba, True, 0)
+    check("... alpha textures are DXT5 with the eight-bit-alpha flag", struct.unpack_from("<i", a, 52)[0] == 15 and struct.unpack_from("<I", a, 20)[0] & 0x2000)
+    check("... and the same pixels always give the same file", textures.native_vtf(img, False, 0xC) == vtf)
+    check("settings the encoder can't do go to vtex", textures._native_flags("normal 1\n") is None and textures._native_flags("clamps 1\nnomip 1\n") == 0x104)
+
+sec = mapinstall.sections()
+check("the installer lists maps as Entire Maps, Map Segments, Skate Parks", [t for t, _ in sec] == ["Entire Maps", "Map Segments", "Skate Parks"])
+check("... and every map it offers is in one of them", sorted(r.map_name for _, ms in sec for r in ms) == sorted(r.map_name for r in mapinstall.catalog()))

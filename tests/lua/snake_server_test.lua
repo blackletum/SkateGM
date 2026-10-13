@@ -17,6 +17,7 @@ local players = {}
 local function Player(id, name)
 	local p = { id = id, name = name }
 	function p:EntIndex() return self.id end
+	function p:UserID() return self.id end
 	function p:Nick() return self.name end
 	function p:IsAdmin() return false end
 	function p:ChatPrint(t) chats[#chats + 1] = self.name .. ": " .. t end
@@ -38,12 +39,12 @@ SNAKE.Command(host, { cmd = "create", x = 0, y = 0, z = 0, radius = 99999, time 
 check("created around the host; radius kept within limits", G.phase == "lobby" and G.area[4] == SNAKE.RADIUS_MAX and G.length == 400)
 SNAKE.Command(bob, { cmd = "join", canSkate = true }, t)
 SNAKE.Command(cat, { cmd = "join", canSkate = true }, t)
-check("players join, each with their own colour", #G.players == 3 and G.entries[bob].slot == 2 and G.entries[cat].slot == 3)
+check("players join, each with their own colour", #G.players == 3 and G.entries[SKATEGM_MODES.Key(bob)].slot == 2 and G.entries[SKATEGM_MODES.Key(cat)].slot == 3)
 skating[host], skating[bob], skating[cat] = true, true, true
 SNAKE.Command(bob, { cmd = "begin" }, t)
 check("only the host starts", G.phase == "lobby")
 SNAKE.Command(host, { cmd = "begin" }, t)
-check("start: countdown, everyone on their own spot around the arena", G.phase == "countdown" and G.entries[bob].start and G.entries[bob].start[1] ~= G.entries[host].start[1])
+check("start: countdown, everyone on their own spot around the arena", G.phase == "countdown" and G.entries[SKATEGM_MODES.Key(bob)].start and G.entries[SKATEGM_MODES.Key(bob)].start[1] ~= G.entries[SKATEGM_MODES.Key(host)].start[1])
 check("... orbs scattered inside the arena", #G.pellets == 3 and (G.pellets[1].x ^ 2 + G.pellets[1].y ^ 2) < G.area[4] ^ 2)
 SNAKE.Think(t + 3.1)
 check("then GO", G.phase == "playing")
@@ -52,26 +53,26 @@ SNAKE.Command(bob, { cmd = "trail", p = { 10, 0, 0, 26, 0, 0, 42, 0, 0 } }, t + 
 SNAKE.Think(t + 4.2)
 check("a skater's trail goes out to everyone", #trails > n and trails[#trails].ent == 2 and #trails[#trails].p == 9)
 SNAKE.Command(bob, { cmd = "trail", p = { 1e9, 0, 0 } }, t + 4.3)
-check("points far outside the arena are ignored", #G.entries[bob].trail == 3)
+check("points far outside the arena are ignored", #G.entries[SKATEGM_MODES.Key(bob)].trail == 3)
 local pel = G.pellets[1]
 SNAKE.Command(bob, { cmd = "trail", p = { pel.x, pel.y, pel.z } }, t + 4.4)
 SNAKE.Command(bob, { cmd = "eat", id = 1 }, t + 4.5)
-check("eating an orb grows the tail, and a new orb appears", G.entries[bob].length == 400 + SNAKE.GROWTH and G.entries[bob].eaten == 1 and G.pellets[1] ~= pel)
+check("eating an orb grows the tail, and a new orb appears", G.entries[SKATEGM_MODES.Key(bob)].length == 400 + SNAKE.GROWTH and G.entries[SKATEGM_MODES.Key(bob)].eaten == 1 and G.pellets[1] ~= pel)
 SNAKE.Command(cat, { cmd = "eat", id = 2 }, t + 4.6)
-check("an orb can't be eaten from across the map", (G.entries[cat].eaten or 0) == 0)
+check("an orb can't be eaten from across the map", (G.entries[SKATEGM_MODES.Key(cat)].eaten or 0) == 0)
 local long = {}
 for k = 1, 60 do long[#long + 1] = 100 + k * 20 long[#long + 1] = 0 long[#long + 1] = 0 end
 SNAKE.Command(host, { cmd = "trail", p = long }, t + 5)
 local len = 0
-local tr = G.entries[host].trail
+local tr = G.entries[SKATEGM_MODES.Key(host)].trail
 for i = 2, #tr do len = len + math.abs(tr[i][1] - tr[i - 1][1]) end
 check(string.format("a tail is kept to its length (%d of 400 units)", len), len <= 400 and #tr <= SNAKE.MAX_POINTS)
 SNAKE.Command(cat, { cmd = "crash", by = 2 }, t + 6)
-check("hitting a tail: out, and everyone's told whose", G.entries[cat].out and chats[#chats]:find("Bob's tail") ~= nil)
+check("hitting a tail: out, and everyone's told whose", G.entries[SKATEGM_MODES.Key(cat)].out and chats[#chats]:find("Bob's tail") ~= nil)
 SNAKE.Command(bob, { cmd = "crash", wall = true }, t + 7)
 check("last one left wins", G.phase == "results" and G.winner and G.winner.name == "Host")
 SNAKE.Think(t + 7 + SNAKE.RESULTS + 0.1)
-check("then back to the lobby for another go", G.phase == "lobby" and not G.entries[cat].out)
+check("then back to the lobby for another go", G.phase == "lobby" and not G.entries[SKATEGM_MODES.Key(cat)].out)
 SNAKE.Command(host, { cmd = "begin" }, t + 30)
 SNAKE.Think(t + 33.1)
 SNAKE.Think(t + 33.2 + 60)

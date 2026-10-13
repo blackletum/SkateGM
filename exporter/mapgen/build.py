@@ -107,11 +107,10 @@ def fog_entity(v, sky, origin):
 
 
 def movable_props(source, cache, area, frame, prefix, work, report):
-    try:
-        loaded = props.load(source, cache, area, work / 'dmo', report)
-    except (OSError, KeyError, ValueError, IndexError) as error:
-        report(f'movable objects not available ({error})')
+    if not source.game.dmo:
+        report(f'movable objects: {source.game.title} has none to read')
         return None, [], []
+    loaded = props.load(source, cache, area, work / 'dmo', report)
     if not loaded.instances:
         return None, [], []
     holder = scene.Scene(cache, '', loaded.textures, loaded.materials, [])
@@ -277,10 +276,7 @@ def build(region, game_root, gmod, out_dir, work_dir, report=print, workers=None
     room = None
     sea = None
     if len(region.corners):
-        try:
-            sea = environment.sea(source, region.district, work / 'env')
-        except (OSError, KeyError, ValueError, IndexError) as error:
-            report(f'water not available ({error})')
+        sea = environment.sea(source, region.district, work / 'env')
     if len(region.corners) and region.skybox:
         if region.backdrop:
             proxy = decode.decode_proxy(source, region.district, work / 'districts', report)
@@ -299,11 +295,7 @@ def build(region, game_root, gmod, out_dir, work_dir, report=print, workers=None
     if moving is not None:
         surf.textures.update(moving.textures)
         surf.materials.update(moving.materials)
-    try:
-        sky = environment.load(source, region.district, work / 'env')
-    except (OSError, KeyError, ValueError, IndexError) as error:
-        report(f'sky not available ({error}); using a stock one')
-        sky = None
+    sky = environment.load(source, region.district, work / 'env')
     skyname = None
     if sky is not None:
         skyname = f'{name}_sky'
@@ -313,7 +305,7 @@ def build(region, game_root, gmod, out_dir, work_dir, report=print, workers=None
             surf.materials[f'skybox_{face_name}'] = surfaces.SourceMaterial(
                 f'skybox/{skyname}{face_name}', 'UnlitGeneric',
                 {'$basetexture': f'skybox/{skyname}{face_name}', '$nofog': 1, '$ignorez': 1}, None)
-    textures.compile_textures(tools, textures.write_sources(surf, game), report)
+    textures.compile_textures(tools, textures.write_sources(surf, game), report, cache=work / 'vtfcache')
     surf.materials['nodraw'] = surfaces.SourceMaterial(f'{prefix}/nodraw', 'UnlitGeneric',
                                                        {'$basetexture': 'tools/toolsnodraw', '$no_draw': 1})
     water = None

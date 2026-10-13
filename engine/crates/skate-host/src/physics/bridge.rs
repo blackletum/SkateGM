@@ -111,9 +111,10 @@ impl Session {
     /// powersliding, reverting) or in the air.
     pub fn push(&mut self, dv: [f32; 3]) -> bool {
         use skate_core::math::Vector3;
-        let state = format!("{:?}", self.skater.player_state.current());
-        let riding = ["PhysicsGround", "SlideGround", "RevertGround", "Air"].iter().any(|s| state.contains(s));
-        if !riding || state.contains("Biped") || state.contains("Wipeout") {
+        let state = self.skater.player_state.current();
+        use skate_core::player::state::PhysicalStateId as Id;
+        let riding = matches!(state, Id::PhysicsGround | Id::SlideGround | Id::RevertGround) || state.is_airborne();
+        if !riding || state.is_biped() || state.is_wipeout() {
             return false;
         }
         let d = Vector3::new(dv[0], dv[1], dv[2]);
@@ -130,7 +131,7 @@ impl Session {
         m[2] += dv[2];
         // gm_sk8 addition: KnownAir follows the flight chosen at take-off
         // and overwrites body velocities, so the push bends that flight too
-        if state.contains("KnownAir") && std::env::var("SK8_AIR_PUSH").as_deref() != Ok("off") {
+        if state == Id::KnownAir && std::env::var("SK8_AIR_PUSH").as_deref() != Ok("off") {
             let now = self.skater.known_air.state.trajectory_index_216 as f32 / 60.0;
             self.skater.trajectory.selector.push_selection([dv[0], dv[1], dv[2], 0.0], now);
         }
@@ -156,8 +157,8 @@ impl Session {
         if decel <= 0.0 {
             return;
         }
-        let state = format!("{:?}", self.skater.player_state.current());
-        if !(state.contains("Wipeout") || state.contains("Biped")) {
+        let state = self.skater.player_state.current();
+        if !(state.is_wipeout() || state.is_biped()) {
             return;
         }
         let step = decel * self.period();
@@ -293,8 +294,8 @@ impl Session {
     /// ahead, held for `ticks` (gm_sk8 addition: the RB punch). Only while
     /// riding on the ground or on foot; returns whether it could start.
     pub fn shove(&mut self, ticks: u32) -> bool {
-        let state = format!("{:?}", self.skater.player_state.current());
-        if state.contains("Air") || state.contains("Wipeout") || state.starts_with("Grind") {
+        let state = self.skater.player_state.current();
+        if state.is_airborne() || state.is_wipeout() || state.is_grinding() {
             return false;
         }
         self.skater.forced_shove = ticks.max(1);
@@ -306,8 +307,8 @@ impl Session {
     /// engine's vehicle-ejection reset, which enters WipeoutGround seeded
     /// with momentum.
     pub fn knock_down(&mut self, velocity: [f32; 3]) -> bool {
-        let state = format!("{:?}", self.skater.player_state.current());
-        if state.contains("Wipeout") || state.contains("Teleport") {
+        let state = self.skater.player_state.current();
+        if state.is_wipeout() || state.is_teleporting() {
             return false;
         }
         let mut transform = self.skater.animated_skeleton.roots.animation_to_world;
@@ -536,19 +537,40 @@ pub static NATIVE_RAILS: std::sync::Mutex<Vec<([f32; 3], [f32; 3], Vec<u8>)>> = 
 /// RWCM gave them. Without them every edge was guessed from welded
 /// neighbours, and where two pieces of a curved rail's tube meet that came
 /// out sharp: the board caught on it.
+/// Kept as a sorted list of (corner hash, surface, edge codes + flags): 16
+/// bytes a triangle, so a whole city's collision doesn't need a hash map of
+/// its corners (bit 0 of the flags: has edges, bit 1: one-sided).
 type NativeTriangle = (u32, Option<[u8; 3]>, bool);
-static NATIVE_TRIANGLES: std::sync::Mutex<Option<std::collections::HashMap<[u32; 9], NativeTriangle>>> =
-    std::sync::Mutex::new(None);
+static NATIVE_TRIANGLES: std::sync::Mutex<Vec<(u64, u32, [u8; 4])>> = std::sync::Mutex::new(Vec::new());
 
-pub fn set_native_triangles(tris: Vec<([[f32; 3]; 3], u32, Option<[u8; 3]>, bool)>) {
-    let map = (!tris.is_empty()).then(|| {
-        tris.into_iter().map(|(p, surface, edges, one_sided)| (key(&p), (surface, edges, one_sided))).collect()
-    });
-    *NATIVE_TRIANGLES.lock().unwrap_or_else(|e| e.into_inner()) = map;
+pub fn set_native_triangles<I: IntoIterator<Item = ([[f32; 3]; 3], u32, Option<[u8; 3]>, bool)>>(tris: I) {
+    let mut list: Vec<(u64, u32, [u8; 4])> = tris
+        .into_iter()
+        .map(|(p, surface, edges, one_sided)| {
+            let flags = u8::from(edges.is_some()) | if one_sided { 2 } else { 0 };
+            let e = edges.unwrap_or([0; 3]);
+            (key(&p), surface, [e[0], e[1], e[2], flags])
+        })
+        .collect();
+    list.sort_unstable_by_key(|t| t.0);
+    list.shrink_to_fit();
+    *NATIVE_TRIANGLES.lock().unwrap_or_else(|e| e.into_inner()) = list;
 }
 
-fn key(p: &[[f32; 3]; 3]) -> [u32; 9] {
-    std::array::from_fn(|i| p[i / 3][i % 3].to_bits())
+fn key(p: &[[f32; 3]; 3]) -> u64 {
+    let mut h: u64 = 0x9E37_79B9_7F4A_7C15;
+    for c in p.iter().flatten() {
+        h = (h ^ u64::from(c.to_bits())).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        h ^= h >> 29;
+    }
+    h
+}
+
+fn native_lookup(list: &[(u64, u32, [u8; 4])], p: &[[f32; 3]; 3]) -> Option<NativeTriangle> {
+    let k = key(p);
+    let i = list.binary_search_by_key(&k, |t| t.0).ok()?;
+    let (_, surface, e) = list[i];
+    Some((surface, (e[3] & 1 != 0).then_some([e[0], e[1], e[2]]), e[3] & 2 != 0))
 }
 
 /// Bit 31 of a collision triangle's surface: its mesh is one-sided (only from
@@ -605,7 +627,8 @@ fn collision_map(
                     triangles
                         .into_iter()
                         .map(|points| {
-                            let native = natives.as_ref().and_then(|m| m.get(&key(&points)));
+                            let native = (!natives.is_empty()).then(|| native_lookup(&natives, &points)).flatten();
+                            let native = native.as_ref();
                             Collision {
                                 points,
                                 surface: native.map_or(0, |n| (n.0 & 0xFFFF) | SURFACE_RETAIL | if n.2 { SURFACE_ONE_SIDED } else { 0 }),

@@ -77,10 +77,10 @@ RACE.Command(cat, { cmd = "finished" }, t + 125)
 check("the rest finished: results", R.phase == "results")
 -- the host leaves: Bob takes over
 RACE.Think(t + 120 + RACE.RESULTS)
-host.gone = true
+RACE.mode.leaveHandler(host) host.gone = true
 RACE.Think(t + 200)
 check("the host left: Bob hosts now", R.host == bob and R.phase == "lobby")
-bob.gone, cat.gone = true, true
+RACE.mode.leaveHandler(bob) RACE.mode.leaveHandler(cat) bob.gone, cat.gone = true, true
 RACE.Think(t + 201)
 check("everyone gone: race closed", R.phase == "idle")
 -- turned off on this server

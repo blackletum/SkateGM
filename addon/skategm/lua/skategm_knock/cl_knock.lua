@@ -15,8 +15,10 @@ function KNOCK.Points(P)
 end
 
 function KNOCK.Touching(e, points)
+	local SPACE = SKATEGM_SPACE
 	for _, p in ipairs(points) do
-		if e:NearestPoint(p[1]):Distance(p[1]) <= p[2] then return true end
+		local l = SPACE.ToLocal(e, SPACE.FromView(p[1]))
+		if e:NearestPoint(l):Distance(l) <= p[2] then return true end
 	end
 	return false
 end
@@ -35,7 +37,7 @@ function KNOCK.Think(now)
 	if not (S and S.phase == "on" and S.P and S.P.HIPS and KNOCK.cvOn:GetBool()) then return end
 	local a = S.API
 	local points
-	for _, e in ipairs(ents.FindInSphere(S.P.HIPS, 160)) do
+	for _, e in ipairs(SKATEGM_SPACE.FindInSphere(SKATEGM_SPACE.FromView(S.P.HIPS), 160)) do
 		if KNOCK.Flagged(e) and now - (KNOCK.recent[e] or -100) >= KNOCK.COOLDOWN then
 			points = points or KNOCK.Points(S.P)
 			if KNOCK.Touching(e, points) then

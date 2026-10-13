@@ -31,12 +31,12 @@ function P.TargetInReach(S, from, dir, board)
 		if ply ~= me and ply:Alive() then
 			local r = S.remote and S.remote[ply]
 			local snap = r and r.snaps and r.snaps[#r.snaps]
-			local body = snap and snap.P and snap.P.HIPS or S.FromAbs(ply:WorldSpaceCenter())
+			local body = snap and snap.P and snap.P.HIPS or SKATEGM_SPACE.View(ply, ply:WorldSpaceCenter())
 			if near(body) then return true end
 		end
 	end
 	for _, npc in ipairs(ents.FindByClass("npc_*")) do
-		if IsValid(npc) and npc:IsNPC() and near(S.FromAbs(npc:WorldSpaceCenter())) then return true end
+		if IsValid(npc) and npc:IsNPC() and near(SKATEGM_SPACE.View(npc, npc:WorldSpaceCenter())) then return true end
 	end
 	return false
 end

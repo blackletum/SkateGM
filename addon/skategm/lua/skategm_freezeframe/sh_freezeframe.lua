@@ -39,14 +39,14 @@ function FREEZEFRAME.CleanPhoto(m, near)
 	local pose, count = {}, 0
 	for name, p in pairs(m.pose) do
 		count = count + 1
-		if count > FREEZEFRAME.BONES_MAX or type(name) ~= "string" or #name > 32 or type(p) ~= "table" then return nil end
+		if count > FREEZEFRAME.BONES_MAX or type(name) ~= "string" or #name > 32 or not (type(p) == "table" or SKATEGM_MODES.IsVec(p)) then return nil end
 		if not (Finite(p[1]) and Finite(p[2]) and Finite(p[3])) then return nil end
 		pose[name] = { math.floor(p[1] * 10 + 0.5) / 10, math.floor(p[2] * 10 + 0.5) / 10, math.floor(p[3] * 10 + 0.5) / 10 }
 	end
 	local hips = pose.HIPS
 	if not hips then return nil end
 	local c = m.cam
-	if not (type(c.pos) == "table" and type(c.ang) == "table" and Finite(c.pos[1]) and Finite(c.pos[2]) and Finite(c.pos[3])
+	if not ((type(c.pos) == "table" or SKATEGM_MODES.IsVec(c.pos)) and type(c.ang) == "table" and Finite(c.pos[1]) and Finite(c.pos[2]) and Finite(c.pos[3])
 		and Finite(c.ang[1]) and Finite(c.ang[2]) and Finite(c.ang[3]) and Finite(c.fov)) then return nil end
 	local d = math.sqrt((c.pos[1] - hips[1]) ^ 2 + (c.pos[2] - hips[2]) ^ 2 + (c.pos[3] - hips[3]) ^ 2)
 	if d > FREEZEFRAME.CAM_RANGE + 32 then return nil end

@@ -68,7 +68,7 @@ at(Vector(290, 0, 10), Vector(295, 0, 60), 30.2)
 check("... but me falling in afterwards: a point (I'm in)", lastSent().how == "player")
 state({ phase = "turn", active = 1 })
 check("someone else's turn: I watch them", BB.mode.spectating ~= nil and BB.mode.spectating[1] == 1)
-local function zoned(t) t.zone, t.ground = 120, 0 state(t) end
+local function zoned(t) t.zone, t.floor = 120, { 0, 0, 0 } state(t) end
 zoned({ phase = "between" })
 zoned({ phase = "turn", active = 2 })
 api.state = "KnownAir"

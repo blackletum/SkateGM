@@ -223,10 +223,7 @@ RACE.mode:Host({
 		{ key = "limit", label = "Time limit", type = "number", min = RACE.LIMIT_MIN, max = RACE.LIMIT_MAX, step = 15, default = RACE.LIMIT_DEFAULT, format = function(v) return v .. " s" end },
 	},
 	start = function(v, mode)
-		mode:SendSequence({
-			{ cmd = "create", radius = v.finish.scale, limit = v.limit },
-			{ cmd = "start", pos = SKATEGM_MODES.PosTable(v.start.pos), yaw = (v.start.yaw + 180) % 360 },
-			{ cmd = "finish", pos = SKATEGM_MODES.PosTable(v.finish.pos) },
-		})
+		mode:Send({ cmd = "create", radius = v.finish.scale, limit = v.limit,
+			start = SKATEGM_MODES.PosTable(v.start.pos), yaw = (v.start.yaw + 180) % 360, finish = SKATEGM_MODES.PosTable(v.finish.pos) })
 	end,
 })
